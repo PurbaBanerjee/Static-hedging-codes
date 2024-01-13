@@ -1,0 +1,79 @@
+
+import matplotlib.pyplot as plt
+import pylab
+N=np.arange(1000)
+
+
+plt.plot(t, mean_GQ1, label='GQ1 mean')
+plt.plot(t,mean_CW,'o', label='CW_b mean')
+plt.plot(t,mean_CW_a, label='CW_a mean')
+plt.plot(t, mean_DH, label='DH mean')
+plt.plot(t, mean_GQ2, label='GQ2 mean')
+plt.plot(t,percentile_ninetyfive_c,label='CW_b disc 95 PFA')
+plt.plot(t,percentile_five_c,label='CW_b disc 5 PFA')
+plt.plot(t,percentile_ninetyfive_c_a,label='CW_a disc 95 PFA')
+plt.plot(t,percentile_five_c_a,label='CW_a disc 5 PFA')
+plt.plot(t,percentile_ninetyfive_dh,label='DH disc 95 PFA')
+plt.plot(t,percentile_five_dh,'*',label='DH disc 5 PFA')
+plt.plot(t,percentile_ninetyfive_gq1,'^',label='GQ1 disc 95 PFA')
+plt.plot(t,percentile_five_gq1,'x',label='GQ1 disc 5 PFA')
+plt.plot(t,percentile_ninetyfive_gq2,'^',label='GQ_2 disc 95 PFA')
+plt.plot(t,percentile_five_gq2,'m*',label='GQ_2 disc 5 PFA')
+plt.legend()
+
+plt.show()
+
+plt.figure(figsize=(7,7))
+plt.rc('legend',fontsize=10)
+U2=[u2 for i in range(len(t))]
+plt.plot(t,percentile_ninetyfive_c,label='CW_b disc 95 PFA')
+plt.plot(t,percentile_five_c,label='CW_b disc 5 PFA')
+plt.plot(t,percentile_ninetyfive_c_a,label='CW_a disc 95 PFA')
+plt.plot(t,percentile_five_c_a,label='CW_a disc 5 PFA')
+
+plt.plot(t,percentile_ninetyfive_gq1,'^',label='GQ1 disc 95 PFA')
+plt.plot(t,percentile_five_gq1,'x',label='GQ1 disc 5 PFA')
+plt.plot(t,percentile_ninetyfive_gq2,'^',label='GQ_2 disc 95 PFA')
+plt.plot(t,percentile_five_gq2,'m*',label='GQ_2 disc 5 PFA')
+
+plt.legend()
+plt.show()
+
+
+
+plt.plot(t,percentile_ninetyfive_dh,label='DH disc 95 PFA')
+plt.plot(t,percentile_five_dh,'*',label='DH disc 5 PFA')
+plt.plot(t,percentile_ninetyfive_dh2,label='DH2 disc 95 PFA')
+plt.plot(t,percentile_five_dh2,'*',label='DH2 disc 5 PFA')
+plt.legend()
+plt.show()
+# create a figure for the data
+
+figData = pylab.figure()
+ax = pylab.gca()
+pylab.plot(t, mean_GQ1, label='GQ1 mean')
+pylab.plot(t,mean_CW,'o', label='CW_b mean')
+pylab.plot(t,mean_CW_a, label='CW_a mean')
+pylab.plot(t, mean_DH, label='DH mean')
+pylab.plot(t, mean_GQ2, label='GQ2 mean')
+pylab.plot(t,percentile_ninetyfive_c,label='CW_b disc 95 PFA')
+pylab.plot(t,percentile_five_c,label='CW_b disc 5 PFA')
+pylab.plot(t,percentile_ninetyfive_c_a,label='CW_a disc 95 PFA')
+pylab.plot(t,percentile_five_c_a,label='CW_a disc 5 PFA')
+pylab.plot(t,percentile_ninetyfive_dh,label='DH disc 95 PFA')
+pylab.plot(t,percentile_five_dh,'*',label='DH disc 5 PFA')
+pylab.plot(t,percentile_ninetyfive_gq1,'^',label='GQ1 disc 95 PFA')
+pylab.plot(t,percentile_five_gq1,'x',label='GQ1 disc 5 PFA')
+pylab.plot(t,percentile_ninetyfive_gq2,'^',label='GQ_2 disc 95 PFA')
+pylab.plot(t,percentile_five_gq2,'m*',label='GQ_2 disc 5 PFA')
+
+# create a second figure for the legend
+figLegend = pylab.figure(figsize = (1.5,1.3))
+
+# produce a legend for the objects in the other figure
+pylab.figlegend(*ax.get_legend_handles_labels(), loc = 'upper left')
+
+pylab.show()
+# save the two figures to files
+figData.savefig("plot.png")
+figLegend.savefig("legend.png")
