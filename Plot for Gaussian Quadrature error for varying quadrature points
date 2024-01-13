@@ -1,0 +1,94 @@
+Plot for GQ1 error for varying number of quadrature points
+import random
+import numpy as np
+import scipy.stats as si
+import sympy as sy
+from scipy.special import roots_legendre,roots_hermite
+import matplotlib.pyplot as plt
+#N-Number of time steps
+r=0.06
+S0=100
+T=1
+#short maturity
+u1=40/252
+u2=21/252
+mu=0.1
+strike=100
+K11=40
+K12=130
+
+sigma=0.27
+
+E_gq1=[]
+E_c=[]
+N=[]
+for q in range(5,100):
+    Q=q#Number of quadrature points for Carr-Wu and GQ1
+    K1=np.zeros(Q)
+    W1=np.zeros(Q)
+    div=0
+
+    [x,w]=roots_hermite(Q)
+    for a in range(Q):
+           #first set of strike points and weights corresponding to u1
+        K1[a]=strike*np.exp(x[a]*sigma*np.sqrt(2*(T-u1))+(div-r-(0.5*(sigma**2)))*(T-u1))#formula 1
+        d=(np.log(K1[a] / strike) + (r-div + 0.5 * sigma ** 2) * (T-u1)) / (sigma * np.sqrt(T-u1))#formula 2
+        wj=((si.norm.pdf(d))/(K1[a]*sigma*np.sqrt(T-u1)))*np.exp((-div)*(T-u1))#formula 3
+        W1[a]=w[a]*(wj*K1[a]*sigma*np.sqrt(2*(T-u1)))/(np.exp(-(x[a]**2)))#formula 4
+    print("The first set of Carr-Wu strike points are:", K1) 
+    print("The first set of Carr-Wu weights are:", W1)
+
+
+
+
+    [t,A]=roots_legendre(Q)
+    print("The nodes are:", t)
+    print("The absiccas are:",A)
+
+    X=np.zeros(Q)
+    W=np.zeros(Q)
+
+    for i in range(Q):
+        X[i]=(1/2)*(K12-K11)*t[i]+(1/2)*(K12+K11)
+        W[i]=(1/2)*(K12-K11)*A[i]
+        
+    print("The Gaussian quadrature strike points are:", X)
+    print("The Gaussian quadrature weights are:", W)
+    d1= (np.log(S0 / strike) + (r -div+ 0.5 * sigma ** 2) * (T)) / (sigma * np.sqrt(T))
+    d2 = (np.log(S0 /strike) + (r -div- 0.5 * sigma ** 2) * (T)) / (sigma * np.sqrt(T))
+    call = (S0 * np.exp((-div)*(T))* si.norm.cdf(d1, 0.0, 1.0) - strike * np.exp(-r * (T)) * si.norm.cdf(d2, 0.0, 1.0))#call value at time 0 with maturity T , stock price at T/2 as S[l] and strike price K
+    print("value of the call option with maturity T at time 0 corresponding to strike price K is:", call)
+
+    hedge_c=0
+    for a in range(Q):
+        if K11<=K1[a]<=K12:
+            print("strike point:", K1[a])
+            d11= (np.log(S0/ K1[a]) + (r -div+ 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+            d22 = (np.log(S0/K1[a]) + (r -div - 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+            call1 = (S0 * np.exp((-div)*(u1))* si.norm.cdf(d11, 0.0, 1.0) - K1[a]* np.exp(-r * (u1)) * si.norm.cdf(d22, 0.0, 1.0))
+            hedge_c += W1[a]*call1
+
+    print("The value of the hedge portfolio using Carr-Wu is:", hedge_c)
+    error_c=np.abs(call-hedge_c)
+    print("The absolute error is:", error_c)
+    E_c.append(error_c)
+
+    hedge=0
+    for a in range(Q):
+        d= (np.log(X[a]/strike) + (r -div+ 0.5 * sigma ** 2) * (T-u1)) / (sigma * np.sqrt(T-u1))
+        W1=(np.exp((-div)*(T-u1))*si.norm.pdf(d))/(X[a]*sigma*np.sqrt(T-u1))
+        d11= (np.log(S0/ X[a]) + (r -div + 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+        d22 = (np.log(S0/X[a]) + (r -div - 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+        call1 = (S0 *np.exp((-div)*(u1))* si.norm.cdf(d11, 0.0, 1.0) - X[a]* np.exp(-r * (u1)) * si.norm.cdf(d22, 0.0, 1.0))
+        hedge=hedge+W[a]*W1*call1
+    
+    print("The hedging portfolio value using one short maturity at time 0 is:", hedge)
+    error_gq1=np.abs(hedge-call)
+    print("The absolute error is:", error_gq1)
+    E_gq1.append(error_gq1)
+    N.append(Q)
+
+plt.plot(N,E_c,label='CW_b absolute error')
+plt.plot(N,E_gq1,label='GQ1 absolute error')
+plt.legend()
+plt.show()
