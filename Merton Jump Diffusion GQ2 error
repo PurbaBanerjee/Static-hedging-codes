@@ -336,3 +336,29 @@ print("Computational time is:", end -start)
 
 
 
+#plot of MJD stock price paths
+import matplotlib.pyplot as plt
+Nsim=1000
+Nsteps=21
+
+delta_t = 1/252
+
+stock_paths = np.zeros([Nsim,Nsteps+1])
+stock_paths[:,0] = S0
+
+np.random.seed(1) 
+Z1 = np.random.normal(size=[Nsim,Nsteps])
+Z2 = np.random.normal(size=[Nsim,Nsteps])
+Poisson = np.random.poisson(lmda*delta_t, [Nsim,Nsteps])
+
+for i in range(Nsteps):
+    stock_paths[:,i+1] = stock_paths[:,i] * np.exp((r-div-lmda * g - 0.5 * sigma **2)*delta_t \
+    + sigma * np.sqrt(delta_t) * Z1[:,i] + mu_j * Poisson[:,i] + np.sqrt(Poisson[:,i]) * sigma_j *Z2[:,i])
+    
+final_prices = stock_paths[:,-1]
+
+
+t = np.linspace(0, Nsteps, Nsteps+1)
+plt.plot(t,stock_paths.transpose())
+plt.show
+
