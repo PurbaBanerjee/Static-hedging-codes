@@ -1,0 +1,179 @@
+#used for latex
+#Gauss-Laguerre
+import matplotlib.pyplot as plt
+import numpy as np
+import math
+import random
+import scipy.stats as si
+import sympy as sy
+from scipy.special import roots_legendre,roots_hermite,roots_laguerre
+#N-Number of time steps
+r=0.06
+S0=100
+T=1
+#short maturity
+L=[40,80,160]
+
+
+mu=0.1
+strike=100
+K11=80
+K12=120
+
+K21=60
+K22=120
+sigma=0.27
+
+Q=15
+
+div=0
+
+[x,w]=roots_hermite(Q)
+print("length:", len(L))
+for l in range(len(L)):
+    u1 =L[l]/252
+    K1=np.zeros(Q)
+    W1=np.zeros(Q)
+    for a in range(Q):
+           #first set of strike points and weights corresponding to u1
+        K1[a]=strike*np.exp(x[a]*sigma*np.sqrt(2*(T-u1))+(div-r-(0.5*(sigma**2)))*(T-u1))#formula 1
+        d=(np.log(K1[a] / strike) + (r-div + 0.5 * sigma ** 2) * (T-u1)) / (sigma * np.sqrt(T-u1))#formula 2
+        wj=((si.norm.pdf(d))/(K1[a]*sigma*np.sqrt(T-u1)))*np.exp((-div)*(T-u1))#formula 3
+        W1[a]=w[a]*(wj*K1[a]*sigma*np.sqrt(2*(T-u1)))/(np.exp(-(x[a]**2)))#formula 4
+    print("The first set of Carr-Wu strike points are:", K1) 
+    print("The first set of Carr-Wu weights are:", W1)
+
+
+
+
+    [t,A]=roots_legendre(Q)
+    print("The nodes are:", t)
+    print("The absiccas are:",A)
+    C1=np.zeros(Q)
+    X=np.zeros(Q)
+    W=np.zeros(Q)
+    i=0
+    while i<Q:
+        X[i]=(1/2)*(K12-K11)*t[i]+(1/2)*(K12+K11)
+        W[i]=(1/2)*(K12-K11)*A[i]
+        i=i+1
+    print("The Gaussian quadrature strike points are:", X)
+    print("The Gaussian quadrature weights are:", W)
+    
+    d1= (np.log(S0 / strike) + (r + 0.5 * sigma ** 2) * (T)) / (sigma * np.sqrt(T))
+    d2 = (np.log(S0 /strike) + (r - 0.5 * sigma ** 2) * (T)) / (sigma * np.sqrt(T))
+    #call value at time 0 with maturity T , stock price at T/2 as S[l] and strike price K
+    call = (S0 * si.norm.cdf(d1, 0.0, 1.0) - strike * np.exp(-r * (T)) * si.norm.cdf(d2, 0.0, 1.0))
+    print("value of the call option with maturity T at time 0 corresponding to strike price K is:", call)
+
+    hedge1=0
+    for a in range(Q):
+        if K11<=K1[a]<=K12:
+            print("strike point:", K1[a])
+            d11= (np.log(S0/ K1[a]) + (r + 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+            d22 = (np.log(S0/K1[a]) + (r - 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+            call1 = (S0 * si.norm.cdf(d11, 0.0, 1.0) - K1[a]* np.exp(-r * (u1)) * si.norm.cdf(d22, 0.0, 1.0))
+            hedge1=hedge1+W1[a]*call1
+
+   
+    error_c=np.abs(call-hedge1)
+    
+
+    hedge=0
+    for a in range(Q):
+        d= (np.log(X[a]/strike) + (r + 0.5 * sigma ** 2) * (T-u1)) / (sigma * np.sqrt(T-u1))
+        W1=(si.norm.pdf(d))/(X[a]*sigma*np.sqrt(T-u1))
+        d11= (np.log(S0/ X[a]) + (r + 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+        d22 = (np.log(S0/X[a]) + (r - 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+        call1 = (S0 * si.norm.cdf(d11, 0.0, 1.0) - X[a]* np.exp(-r * (u1)) * si.norm.cdf(d22, 0.0, 1.0))
+        hedge=hedge+W[a]*W1*call1
+    
+    
+    error=np.abs(hedge-call)
+    
+
+    E=[]
+    U2=[]
+    for k in range(1,L[l]):
+        u2=(k)/252
+        print("The second maturity u2 is", k,"days" )
+        X5=np.zeros(Q)
+        W5=np.zeros(Q)
+
+        for i in range(Q):
+            X5[i]=(1/2)*(K22-K21)*t[i]+(1/2)*(K22+K21)
+            W5[i]=(1/2)*(K22-K21)*A[i]
+    
+        [t1,A1]=roots_legendre(5)
+    
+        X3=np.zeros(5)
+        W3=np.zeros(5)
+    
+        hedge2=0
+        for j in range(Q):
+            w_tilde=0
+            if K11 !=0:
+                for i in range(5):
+                    #computing the integral over [0,K11] to get modified weights
+                    X3[i]=(1/2)*(K11)*t1[i]+(1/2)*(K11)
+                    W3[i]=(1/2)*(K11)*A1[i]
+                    d= (np.log(X3[i]/strike) + (r + 0.5 * sigma ** 2) * (T-u1)) / (sigma * np.sqrt(T-u1))
+                    W11=(si.norm.pdf(d))/(X3[i]*sigma*np.sqrt(T-u1))
+                    d2=(np.log(X5[j]/X3[i]) + (r + 0.5 * sigma ** 2) * (u1-u2)) / (sigma * np.sqrt(u1-u2))
+                    W12=(si.norm.pdf(d2))/(X5[j]*sigma*np.sqrt(u1-u2))
+                    w_tilde=w_tilde+W3[i]*W11*W12
+            else:
+                w_tilde=0
+            d11= (np.log(S0/ X5[j]) + (r + 0.5 * sigma ** 2) * (u2)) / (sigma * np.sqrt(u2))
+            d22 = (np.log(S0/X5[j]) + (r - 0.5 * sigma ** 2) * (u2)) / (sigma * np.sqrt(u2))
+            call1 = (S0 * si.norm.cdf(d11, 0.0, 1.0) - X5[j]* np.exp(-r * (u2)) * si.norm.cdf(d22, 0.0, 1.0))
+            hedge2=hedge2+W5[j]*w_tilde*call1 
+
+            #quadrature points for computing the modified weight over [K12,infinity]
+
+        [x1,w1]= roots_laguerre(20)
+        hedge3=0
+
+        for j in range(Q):
+            w_tilde=0
+            for i in range(20):
+                 #computing the modified weights over [K12,infinity] using Gauss-Laguerre
+                a = np.power(np.divide(np.log(K12/strike) +(r + 0.5 *sigma **2)*(T-u1),sigma*np.sqrt( 2 *(T-u1))) , 2)
+                f1 = np.divide(np.log(X5[j]/strike) -  sigma * np.sqrt(2* (x1[i] + a) *(T-u1))\
+                           +(r + 0.5 *sigma **2)*(T-u2),sigma*np.sqrt(u1-u2))
+                f2 = np.sqrt(2 * (x1[i] + a) * (u1-u2)) * X5[j] * sigma * 2 * np.pi
+                w_tilde += np.exp(-a) * w1[i] * np.divide( np.exp(-0.5*(f1**2)), f2)
+
+            d11= (np.log(S0/ X5[j]) + (r -div + 0.5 * sigma ** 2) * (u2)) / (sigma * np.sqrt(u2))
+            d22 = (np.log(S0/X5[j]) + (r -div - 0.5 * sigma ** 2) * (u2)) / (sigma * np.sqrt(u2))
+            call1 = (np.exp((-div)*(u2))*S0 * si.norm.cdf(d11, 0.0, 1.0) \
+                      - X5[j]* np.exp(-r * (u2)) * si.norm.cdf(d22, 0.0, 1.0))
+            hedge3 += W5[j]*w_tilde*call1 
+        
+        total=hedge+hedge2+hedge3
+
+        
+        error2=np.abs(total-call)
+       
+   
+        U2.append(u2/u1)
+        E.append(error2)
+        if k==1:
+            error1=error2
+            nq=u2
+        elif error2<error1 and k>1:
+            error1=error2 #storing the minimum errors for increasing values of u2
+            nq=u2 #storing the value of u2 corresponding to the minimum error
+
+    print("The value of u2 at which the minimum error is attained is:", nq)
+    plt.plot(U2,E,label='u1=%f'%u1 )
+    plt.grid()
+    plt.yscale('log')
+    
+plt.xlabel("Value of u2/u1")
+plt.ylabel("Log error ")
+plt.title("Error in Gaussian quadrature hedge")
+plt.legend()
+
+
+plt.show()
