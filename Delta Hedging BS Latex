@@ -1,0 +1,774 @@
+#used for latex
+import random
+import numpy as np
+import scipy.stats as si
+from scipy import integrate
+from scipy.special import roots_legendre,roots_hermite,roots_laguerre
+import math
+from numpy.linalg import inv
+#N-Number of time steps
+
+random.seed(5)
+S0=100
+T=1
+#short maturity
+u1=40/252
+u2=21/252
+
+t=[((1 * (l+1))/252) for l in range(40)]#time-steps for rebalancing the delta hedge portfolio
+print(t)
+mu=0.10
+r=0.06
+strike=100
+delta_t=1/252
+#strike range for short maturity u1
+K1=60
+K2=120
+
+
+#strike range for short maturity u2
+K21=60
+K22=120
+
+
+sigma=0.27
+div=0
+
+
+#number of quadrature points for CW_b
+Q_c=15
+
+
+#carr-wu abscissas
+[x,w]=roots_hermite(Q_c)
+
+K11=np.zeros(Q_c)
+W11=np.zeros(Q_c)
+
+#the actual number of points used for CW_b
+N_actual = 0
+#computing Carr-Wu strike points and weights
+for a in range(Q_c):
+    #first set of strike points and weights corresponding to u1
+    
+    K11[a]=strike*np.exp(x[a]*sigma*np.sqrt(2*(T-u1))+(div- r - 0.5*(sigma**2))*(T-u1))#strike points
+    if K1<=K11[a]<=K2:
+        N_actual +=1
+    W11[a]=w[a]*(np.exp((-div)*(T-u1))/np.sqrt(np.pi))#weights
+print("The first set of CW_b strike points are:", K11) 
+print("The first set of CW_b weights are:", W11)
+print("The number of strike points falling in ", str([K1,K2]),"is:", N_actual)
+#number of quadrature points for CW_a
+Q_a=2
+
+
+#carr-wu abscissas
+[x_a,w_a]=roots_hermite(Q_a)
+
+K_a=np.zeros(Q_a)
+W_a=np.zeros(Q_a)
+
+#computing Carr-Wu strike points and weights
+for i in range(Q_a):
+    #first set of strike points and weights corresponding to u1
+    K_a[i]=strike*np.exp(x_a[i]*sigma*np.sqrt(2*(T-u1))+(div- r - 0.5*(sigma**2))*(T-u1))#strike points
+    W_a[i]=w_a[i]*(np.exp((-div)*(T-u1))/np.sqrt(np.pi))#weights
+print("The first set of CW_a strike points are:", K_a) 
+print("The first set of CW_a weights are:", W_a)
+
+
+#number of quadrature points for GQ1
+Q1=15
+[t1,A1]=roots_legendre(Q1)
+X1=np.zeros(Q1)
+W1=np.zeros(Q1)
+for a in range(Q1):
+    X1[a]=0.5*(K2-K1)*t1[a] +0.5*(K2+K1)
+    W1[a]=0.5*(K2-K1)*A1[a]
+print("The first set of Gaussian quadrature strike points are:", X1)
+print("The first set of Gaussian quadrature weights are:", W1)
+
+
+#number of quadrature points corresponding to second short maturity u2
+Q2=15
+
+[t2,A2]=roots_legendre(Q2)
+X_q2=np.zeros(Q2)
+W_q2=np.zeros(Q2)
+for a in range(Q2):
+    X_q2[a]=0.5*(K22-K21)*t2[a] +0.5*(K22+K21)
+    W_q2[a]=0.5*(K22-K21)*A2[a]
+print("The second set of Gaussian quadrature strike points are:", X_q2)
+print("The second set of Gaussian quadrature weights are:", W_q2)
+
+
+d11= (np.log(S0 / strike) + (r -div + 0.5 * sigma ** 2) * (T)) / (sigma * np.sqrt(T))
+d12 = (np.log(S0 /strike) + (r -div - 0.5 * sigma ** 2) * (T)) / (sigma * np.sqrt(T))
+value = (np.exp((-div)*T)*S0 * si.norm.cdf(d11, 0.0, 1.0) - strike * np.exp(-r * (T)) * si.norm.cdf(d12, 0.0, 1.0))
+
+
+callT=value
+print("Value of target option at time 0 is:", callT)
+
+hedge_c1=0
+for a in range(Q_c):
+    if K1 <=K11[a]<=K2:
+        print("strike point:", K11[a])
+        d11= (np.log(S0/ K11[a]) + (r -div+ 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+        d22 = (np.log(S0/K11[a]) + (r -div - 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+        call1 = (S0 * np.exp((-div)*(u1))* si.norm.cdf(d11, 0.0, 1.0) - K11[a]* np.exp(-r * (u1)) * si.norm.cdf(d22, 0.0, 1.0))
+        hedge_c1 += W11[a]*call1
+
+print("The value of the hedge portfolio using CW_b is:", hedge_c1)
+error_c = hedge_c1 - callT
+print("The error is:", error_c)
+
+
+hedge_c_a=0
+for i in range(Q_a):
+    if K1 <=K_a[i]<=K2:
+        print("strike point:", K_a[i])
+        d11= (np.log(S0/ K_a[i]) + (r -div+ 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+        d22 = (np.log(S0/K_a[i]) + (r -div - 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+        call1 = (S0 * np.exp((-div)*(u1))* si.norm.cdf(d11, 0.0, 1.0)\
+                 - K_a[i]* np.exp(-r * (u1)) * si.norm.cdf(d22, 0.0, 1.0))
+        hedge_c_a += W_a[i]*call1
+
+print("The value of the hedge portfolio using CW_a is:", hedge_c_a)
+error_c_a = hedge_c_a - callT
+print("The error is:", error_c_a)
+
+hedge_gq1=0
+for a in range(Q1):
+    d= (np.log(X1[a]/strike) + (r -div+ 0.5 * sigma ** 2) * (T-u1)) / (sigma * np.sqrt(T-u1))
+    weight=(np.exp((-div)*(T-u1))*si.norm.pdf(d))/(X1[a]*sigma*np.sqrt(T-u1))
+    d11= (np.log(S0/ X1[a]) + (r -div + 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+    d22 = (np.log(S0/X1[a]) + (r -div - 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+    call1 = (S0 *np.exp((-div)*(u1))* si.norm.cdf(d11, 0.0, 1.0) - X1[a]* np.exp(-r * (u1)) * si.norm.cdf(d22, 0.0, 1.0))
+    hedge_gq1 += W1[a]*weight*call1
+    
+print("The hedging portfolio value using one short maturity at time 0 is:", hedge_gq1)
+error = hedge_gq1-callT
+print("The error is:", error)
+
+#quadrature points for computing the modified weight over [0,K_{11}]
+
+[t1,A1]=roots_legendre(5)
+print("The nodes are:", t1)
+print("The absiccas are:",A1)
+
+X3=np.zeros(5)
+W3=np.zeros(5)
+hedge2=0
+for j in range(Q2):
+    w_tilde=0
+    if K1 !=0:
+        for i in range(5):
+             #computing the integral over [0,K11] to get modified weights
+            X3[i]=(1/2)*(K1)*t1[i]+(1/2)*(K1)
+            W3[i]=(1/2)*(K1)*A1[i]
+            d= (np.log(X3[i]/strike) + (r -div + 0.5 * sigma ** 2) * (T-u1)) / (sigma * np.sqrt(T-u1))
+            w11=(np.exp((-div)*(T-u1))*si.norm.pdf(d))/(X3[i]*sigma*np.sqrt(T-u1))
+            d2=(np.log(X_q2[j]/X3[i]) + (r -div + 0.5 * sigma ** 2) * (u1-u2)) / (sigma * np.sqrt(u1-u2))
+            w12=(np.exp((-div)*(u1-u2))*si.norm.pdf(d2))/(X_q2[j]*sigma*np.sqrt(u1-u2))
+            w_tilde=w_tilde+W3[i]*w11*w12
+    else:
+        w_tilde=0
+    d11= (np.log(S0/ X_q2[j]) + (r -div + 0.5 * sigma ** 2) * (u2)) / (sigma * np.sqrt(u2))
+    d22 = (np.log(S0/X_q2[j]) + (r -div - 0.5 * sigma ** 2) * (u2)) / (sigma * np.sqrt(u2))
+    call1 = (np.exp((-div)*(u2))*S0 * si.norm.cdf(d11, 0.0, 1.0) - X_q2[j]* np.exp(-r * (u2)) * si.norm.cdf(d22, 0.0, 1.0))
+    hedge2 += W_q2[j]*w_tilde*call1 
+
+
+
+
+
+
+#quadrature points for computing the modified weight over [K12,infinity]
+
+[x1,w1]= roots_laguerre(20)
+hedge3=0
+
+for j in range(Q2):
+    w_tilde=0
+    for i in range(20):
+        #computing the modified weights over [K12,infinity] using Gauss-Laguerre
+        a = np.power(np.divide(np.log(K2/strike) +(r + 0.5 *sigma **2)*(T-u1),sigma*np.sqrt( 2 *(T-u1))) , 2)
+        f1 = np.divide(np.log(X_q2[j]/strike) -  sigma * np.sqrt(2* (x1[i] + a) *(T-u1))+(r + 0.5 *sigma **2)*(T-u2),sigma*np.sqrt(u1-u2))
+        f2 = np.sqrt(2 * (x1[i] + a) * (u1-u2)) * X_q2[j] * sigma * 2 * np.pi
+        w_tilde += np.exp(-a) * w1[i] * np.divide( np.exp(-0.5*(f1**2)), f2)
+
+    d11= (np.log(S0/ X_q2[j]) + (r -div + 0.5 * sigma ** 2) * (u2)) / (sigma * np.sqrt(u2))
+    d22 = (np.log(S0/X_q2[j]) + (r -div - 0.5 * sigma ** 2) * (u2)) / (sigma * np.sqrt(u2))
+    call1 = (np.exp((-div)*(u2))*S0 * si.norm.cdf(d11, 0.0, 1.0) - X_q2[j]* np.exp(-r * (u2)) * si.norm.cdf(d22, 0.0, 1.0))
+    hedge3 += W_q2[j]*w_tilde*call1 
+
+    
+
+hedge_gq2 = hedge_gq1 + hedge2 + hedge3
+
+print("The hedging portfolio value using two short maturities at time 0 is:", hedge_gq2)
+error2 = hedge_gq2-callT
+print("The error is:", error2)
+percentage=(np.abs(error)-np.abs(error2))/np.abs(error) * 100
+print("Percentage decrease in error", percentage, "%")
+
+
+
+
+
+#used for latex
+#Gauss-Laguerre with option to include different strike intervals for two maturities
+#delta hedging with dividends and gaussian quadrature using  options with two short maturities and using Carr-Wu parameters
+import random
+import numpy as np
+import scipy.stats as si
+
+from scipy.special import roots_legendre,roots_hermite,roots_laguerre
+import math
+
+print(t)
+
+
+S=np.zeros((1000,41))
+value=np.zeros((1000,41))
+delta=np.zeros((1000,41))
+call_previous =np.zeros((1000,41))
+hedge_error_prev=np.zeros((1000,41))
+
+target_value = []
+percentile_ninetyfive_c = []
+percentile_ninetyfive_c_a = []
+percentile_ninetyfive_dh = []
+percentile_ninetyfive_dh2 = []
+percentile_ninetyfive_gq1 = []
+percentile_ninetyfive_gq2 = []
+percentile_five_c = []
+percentile_five_c_a = []
+percentile_five_dh = []
+percentile_five_dh2 = []
+percentile_five_gq1 = []                                 
+percentile_five_gq2 = []
+mean_CW = []
+mean_CW_a = []
+mean_DH = []
+mean_GQ1 = []
+mean_GQ2 = []
+
+S[:,0]=S0
+d11= (np.log(S[:,0] / strike) + (r -div + 0.5 * sigma ** 2) * (T)) / (sigma * np.sqrt(T))
+d12 = (np.log(S[:,0] /strike) + (r -div - 0.5 * sigma ** 2) * (T)) / (sigma * np.sqrt(T))
+value[:,0] = (np.exp((-div)*T)*S[:,0] * si.norm.cdf(d11, 0.0, 1.0) - strike * np.exp(-r * (T)) * si.norm.cdf(d12, 0.0, 1.0))
+delta[:,0] = si.norm.cdf(d11, 0.0, 1.0)
+call_previous[:,0] = value[:,0]
+callT=value[1,0]
+print("Value of target option at time 0 is:", callT)
+
+
+print("Number of quadrature points for CW_b:", Q_c)
+call2=np.zeros(Q_c)#Carr-Wu short maturity calls
+
+hedge_c=0
+for l in range(Q_c):
+    d3= (np.log(S0 / K11[l]) + (r -div + 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+    d4 = (np.log(S0 /K11[l]) + (r -div - 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+    call2[l] = (S0*np.exp((-div)*(u1)) * si.norm.cdf(d3, 0.0, 1.0) - K11[l] * np.exp(-r * (u1)) * si.norm.cdf(d4, 0.0, 1.0))#call value at time t[i-1] with maturity u1 ,stock price at t[i-1] as S[j][i] and strike price K11[j]
+    if K1 <= K11[l]  <= K2:
+        hedge_c += W11[l]*call2[l] #carr-wu hedge   
+        
+#error in CW_b hedge
+error_c1= hedge_c-callT
+
+print("Number of quadrature points for CW_a:", Q_a)
+
+call_a=np.zeros(Q_a)#Carr-Wu short maturity calls
+
+hedge_a=0
+for l in range(Q_a):
+    d3= (np.log(S0 / K_a[l]) + (r -div + 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+    d4 = (np.log(S0 /K_a[l]) + (r -div - 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+    call_a[l] = (S0*np.exp((-div)*(u1)) * si.norm.cdf(d3, 0.0, 1.0)\
+                - K_a[l] * np.exp(-r * (u1)) * si.norm.cdf(d4, 0.0, 1.0))#call value at time t[i-1] with maturity u1 ,stock price at t[i-1] as S[j][i] and strike price K11[j]
+    if K1 <= K_a[l]  <= K2:
+        hedge_a += W_a[l]*call_a[l] #CW_a hedge  
+        
+#error in carr-wu hedge
+error_c_a1 = hedge_a-callT
+
+print("Number of quadrature points for GQ1:", Q1)        
+#Gaussian Quadrature hedge with options having maturity u1
+hedge=0
+for a in range(Q1):
+    dx= (np.log(X1[a]/strike) + (r -div + 0.5 * sigma ** 2) * (T-u1)) / (sigma * np.sqrt(T-u1))
+    W=(np.exp((-div)*(T-u1))*si.norm.pdf(dx))/(X1[a]*sigma*np.sqrt(T-u1))
+    d11= (np.log(S0/X1[a]) + (r -div + 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+    d22 = (np.log(S0/X1[a]) + (r -div - 0.5 * sigma ** 2) * (u1)) / (sigma * np.sqrt(u1))
+    call1 = (S0 * np.exp((-div)*(u1))* si.norm.cdf(d11, 0.0, 1.0) - X1[a]* np.exp(-r * (u1)) * si.norm.cdf(d22, 0.0, 1.0))
+    print("weight:", W1[a]*W)
+    hedge+= W1[a]*W*call1
+       
+    
+error_gq11 = hedge-callT
+        
+        
+#computing the hedge with second short maturity u2 
+        
+[t2,A2]=roots_legendre(5) #roots for estimating the modified weights
+X2=np.zeros(5)
+W2=np.zeros(5)
+        
+hedge2=0
+        
+for a in range(Q2):
+    Wtilde=0
+    if K1 !=0:
+        for b in range(5):
+            #estimating the integral over [0,K1]
+            X2[b]=0.5*K1*t2[b] + 0.5*K1
+            W2[b]=0.5*K1*A2[b]
+            ds1= (np.log(X2[b]/strike) + (r -div + 0.5 * sigma ** 2) * (T-u1)) / (sigma * np.sqrt(T-u1))
+            W21=(np.exp((-div)*(T-u1))*si.norm.pdf(ds1))/(X2[b]*sigma*np.sqrt(T-u1))
+            ds2=(np.log(X_q2[a]/X2[b]) + (r -div + 0.5 * sigma ** 2) * (u1-u2)) / (sigma * np.sqrt(u1-u2))
+            W22=(np.exp((-div)*(u1-u2))*si.norm.pdf(ds2))/(X_q2[a]*sigma*np.sqrt(u1-u2))
+            Wtilde +=W2[b]*W21*W22 #modified weights 
+    
+    h1= (np.log(S0/X_q2[a]) + (r -div + 0.5 * sigma ** 2) * (u2)) / (sigma * np.sqrt(u2))
+    h2 = (np.log(S0/X_q2[a]) + (r -div - 0.5 * sigma ** 2) * (u2)) / (sigma * np.sqrt(u2))
+    call3 = (np.exp((-div)*(u2))*S0 * si.norm.cdf(h1, 0.0, 1.0) - X_q2[a]* np.exp(-r * (u2)) * si.norm.cdf(h2, 0.0, 1.0))
+
+    hedge2 +=W_q2[a]*Wtilde*call3
+        
+
+
+#quadrature points for computing the modified weight over [K12,infinity]
+
+[x1,w1]= roots_laguerre(20)
+hedge3=0
+
+for a1 in range(Q2):
+    Wtilde=0
+    for b in range(20):
+        #computing the modified weights over [K2,infinity] using Gauss-Laguerre
+        a = np.power(np.divide(np.log(K2/strike) +(r + 0.5 *sigma **2)*(T-u1),sigma*np.sqrt( 2 *(T-u1))) , 2)
+        f1 = np.divide(np.log(X_q2[a1]/strike) -  sigma * np.sqrt(2* (x1[b] + a) *(T-u1))+(r + 0.5 *sigma **2)*(T-u2),sigma*np.sqrt(u1-u2))
+        f2 = np.sqrt(2 * (x1[b] + a) * (u1-u2)) * X_q2[a1] * sigma * 2 * np.pi
+        Wtilde += np.exp(-a) * w1[b] * np.divide( np.exp(-0.5*(f1**2)), f2)
+            
+        
+    h1= (np.log(S0/X_q2[a1]) + (r -div + 0.5 * sigma ** 2) * (u2)) / (sigma * np.sqrt(u2))
+    h2 = (np.log(S0/X_q2[a1]) + (r -div - 0.5 * sigma ** 2) * (u2)) / (sigma * np.sqrt(u2))
+    call3 = (np.exp((-div)*(u2))*S0 * si.norm.cdf(h1, 0.0, 1.0) - X_q2[a1]* np.exp(-r * (u2)) * si.norm.cdf(h2, 0.0, 1.0))
+        
+    hedge3 +=W_q2[a1]*Wtilde*call3
+
+    
+error_gq22= hedge+hedge2+hedge3-callT
+
+print("The error at time 0 using CW_b hedge  is: ", error_c1)
+print("The error at time 0 using CW_a hedge  is: ", error_c_a1)
+print("The error at time 0 using Gaussian quadrature hedge with one short maturities is: ", error_gq11)
+print("The error at time 0 using Gaussian quadrature hedge with two short maturities is: ", error_gq22)
+random.seed(2)
+money_from_u2_calls = np.zeros(1000)
+for i in range(1,41):
+    
+    error_c=np.zeros(1000)
+    error_c_a=np.zeros(1000)
+    error_gq1=np.zeros(1000)
+    error_gq2=np.zeros(1000)
+    call=np.zeros(1000)
+    hedge_error=np.zeros(1000)
+    hedge_error2=np.zeros(1000)
+    for j in range(1000):
+        #computing stock paths at time t[i-1]
+        z = sigma * np.sqrt(delta_t) * random.gauss(0,1)
+        S[j,i] = S[j,i-1] * np.exp((r-div-(sigma**2)/2) * (delta_t) + z)
+        
+        #computing target call value at time t[i-1] 
+        d1= (np.log(S[j,i] / strike) + (r -div + 0.5 * sigma ** 2) * (T-t[i-1])) / (sigma * np.sqrt(T-t[i-1]))
+        d2 = (np.log(S[j,i] /strike) + (r -div - 0.5 * sigma ** 2) * (T-t[i-1])) / (sigma * np.sqrt(T-t[i-1]))
+        call[j] = (S[j,i]* np.exp((-div)*(T-t[i-1]))* si.norm.cdf(d1, 0.0, 1.0) \
+                   - strike * np.exp(-r * (T-t[i-1])) * si.norm.cdf(d2, 0.0, 1.0))#call value at time t[i-1] with maturity T , stock price at t[i-1] as S[j] and strike price K
+        
+        call_previous[j,i] = call[j]
+        #computing the delta at time t[i-1]
+        delta[j,i]=si.norm.cdf(d1, 0.0, 1.0)
+        
+        #computing the delta hedge at time t[i-1]
+        value[j,i]=delta[j,i-1]*S[j,i]+(value[j,i-1]-delta[j,i-1]*S[j,i-1])*np.exp(r*delta_t)
+        hedge_error[j]= value[j,i]-call[j]
+        
+        hedge_error2[j]=  hedge_error_prev[j,i-1] *np.exp(r*delta_t) +call_previous[j,i]-(delta[j,i-1]*S[j,i]+\
+                                             (call_previous[j,i-1]-delta[j,i-1]*S[j,i-1])*np.exp(r*delta_t))
+        hedge_error_prev[j,i]=hedge_error2[j]
+        call2=np.zeros(Q_c)#Carr-Wu short maturity calls
+        hedge_c=0
+        for l in range(Q_c):
+            if i<40:
+                d3= (np.log(S[j,i] / K11[l]) + (r -div + 0.5 * sigma ** 2) * (u1-t[i-1])) / (sigma * np.sqrt(u1-t[i-1]))
+                d4 = (np.log(S[j,i] /K11[l]) + (r -div - 0.5 * sigma ** 2) * (u1-t[i-1])) / (sigma * np.sqrt(u1-t[i-1]))
+                call2[l] = (S[j,i]*np.exp((-div)*(u1-t[i-1])) * si.norm.cdf(d3, 0.0, 1.0) - K11[l] * np.exp(-r * (u1-t[i-1])) * si.norm.cdf(d4, 0.0, 1.0))#call value at time t[i-1] with maturity u1 ,stock price at t[i-1] as S[j][i] and strike price K11[j]
+            else:
+                call2[l] = np.maximum(S[j,i]-K11[l],0)
+            if K1 <=K11[l] <= K2:
+                hedge_c+= W11[l]*call2[l] #carr-wu hedge   
+        
+        #error in carr-wu hedge
+        error_c[j]= hedge_c - call[j]-error_c1 * np.exp(r* i *delta_t)
+        
+        
+        call_a=np.zeros(Q_a)#Carr-Wu short maturity calls
+        hedge_c_a=0
+        for l in range(Q_a):
+            if i<40:
+                d3= (np.log(S[j,i] / K_a[l]) + (r -div + 0.5 * sigma ** 2) * (u1-t[i-1])) / (sigma * np.sqrt(u1-t[i-1]))
+                d4 = (np.log(S[j,i] /K_a[l]) + (r -div - 0.5 * sigma ** 2) * (u1-t[i-1])) / (sigma * np.sqrt(u1-t[i-1]))
+                call_a[l] = (S[j,i]*np.exp((-div)*(u1-t[i-1])) * si.norm.cdf(d3, 0.0, 1.0) - K_a[l] * np.exp(-r * (u1-t[i-1])) * si.norm.cdf(d4, 0.0, 1.0))#call value at time t[i-1] with maturity u1 ,stock price at t[i-1] as S[j][i] and strike price K11[j]
+            else:
+                call_a[l] = np.maximum(S[j,i]-K_a[l],0)
+            if K1 <=K_a[l] <= K2:
+                hedge_c_a+= W_a[l]*call_a[l] #carr-wu hedge   
+        
+        #error in carr-wu hedge
+        error_c_a[j]= hedge_c_a - call[j]-error_c_a1 * np.exp(r* i *delta_t)
+        
+        #Gaussian Quadrature hedge with options having maturity u1
+        hedge=0
+        for a in range(Q1):
+            dx= (np.log(X1[a]/strike) + (r -div + 0.5 * sigma ** 2) * (T-u1)) / (sigma * np.sqrt(T-u1))
+            W=(np.exp((-div)*(T-u1))*si.norm.pdf(dx))/(X1[a]*sigma*np.sqrt(T-u1))
+            if i<40:
+                d11= (np.log(S[j,i]/X1[a]) + (r -div + 0.5 * sigma ** 2) * (u1-t[i-1])) / (sigma * np.sqrt(u1-t[i-1]))
+                d22 = (np.log(S[j,i]/X1[a]) + (r -div - 0.5 * sigma ** 2) * (u1-t[i-1])) / (sigma * np.sqrt(u1-t[i-1]))
+                call1 = (S[j,i] * np.exp((-div)*(u1-t[i-1]))* si.norm.cdf(d11, 0.0, 1.0) - X1[a]* np.exp(-r * (u1-t[i-1])) * si.norm.cdf(d22, 0.0, 1.0))
+            else:
+                call1 = np.maximum(S[j,i] - X1[a],0)
+            hedge+= W1[a]*W*call1
+       
+        error_gq1[j] = hedge - call[j] -error_gq11 * np.exp(r* i *delta_t)
+        
+        if i<22:
+              #computing the hedge with second short maturity u2 
+            [t2,A2]=roots_legendre(5) #roots for estimating the modified weights
+            X2=np.zeros(5)
+            W2=np.zeros(5)
+        
+            hedge2=0
+        
+            for a in range(Q2):
+                Wtilde=0
+                for b in range(5):
+                    if K1 !=0:
+                         #estimating the integral over [0,K1]
+                        X2[b]=0.5*K1*t2[b] + 0.5*K1
+                        W2[b]=0.5*K1*A2[b]
+                        ds1= (np.log(X2[b]/strike) + (r -div + 0.5 * sigma ** 2) * (T-u1)) / (sigma * np.sqrt(T-u1))
+                        W21=(np.exp((-div)*(T-u1))*si.norm.pdf(ds1))/(X2[b]*sigma*np.sqrt(T-u1))
+                        ds2=(np.log(X_q2[a]/X2[b]) + (r -div + 0.5 * sigma ** 2) * (u1-u2)) / (sigma * np.sqrt(u1-u2))
+                        W22=(np.exp((-div)*(u1-u2))*si.norm.pdf(ds2))/(X_q2[a]*sigma*np.sqrt(u1-u2))
+                        Wtilde +=W2[b]*W21*W22 #modified weights 
+                if i<21:
+                    h1= (np.log(S[j,i]/X_q2[a]) + (r -div + 0.5 * sigma ** 2) * (u2-t[i-1])) / (sigma * np.sqrt(u2-t[i-1]))
+                    h2 = (np.log(S[j,i]/X_q2[a]) + (r -div - 0.5 * sigma ** 2) * (u2-t[i-1])) / (sigma * np.sqrt(u2-t[i-1]))
+                    call3 = (np.exp((-div)*(u2-t[i-1]))*S[j,i] * si.norm.cdf(h1, 0.0, 1.0)\
+                             - X_q2[a]* np.exp(-r * (u2-t[i-1])) * si.norm.cdf(h2, 0.0, 1.0))
+                else:
+                    call3=np.maximum(S[j,i]-X_q2[a],0)
+                hedge2 +=W_q2[a]*Wtilde*call3
+        
+             #quadrature points for computing the modified weight over [K12,infinity]
+
+            [x1,w1]= roots_laguerre(20)
+            hedge3=0
+
+            for a1 in range(Q2):
+                Wtilde=0
+                for b in range(20):
+                    #computing the modified weights over [K2,infinity] using Gauss-Laguerre
+                    a = np.power(np.divide(np.log(K2/strike) +(r + 0.5 *sigma **2)*(T-u1),sigma*np.sqrt( 2 *(T-u1))) , 2)
+                    f1 = np.divide(np.log(X_q2[a1]/strike) -  sigma * np.sqrt(2* (x1[b] + a) *(T-u1))+(r + 0.5 *sigma **2)*(T-u2),sigma*np.sqrt(u1-u2))
+                    f2 = np.sqrt(2 * (x1[b] + a) * (u1-u2)) * X_q2[a1] * sigma * 2 * np.pi
+                    Wtilde += np.exp(-a) * w1[b] * np.divide( np.exp(-0.5*(f1**2)), f2)
+            
+                if i<21:
+                    h1= (np.log(S[j,i]/X_q2[a1]) + (r -div + 0.5 * sigma ** 2) * (u2-t[i-1])) / (sigma * np.sqrt(u2-t[i-1]))
+                    h2 = (np.log(S[j,i]/X_q2[a1]) + (r -div - 0.5 * sigma ** 2) * (u2-t[i-1])) / (sigma * np.sqrt(u2-t[i-1]))
+                    call3 = (np.exp((-div)*(u2-t[i-1]))*S[j,i] * si.norm.cdf(h1, 0.0, 1.0) - X_q2[a1]* np.exp(-r * (u2-t[i-1])) * si.norm.cdf(h2, 0.0, 1.0))
+                else:
+                    call3=np.maximum(S[j,i]-X_q2[a1],0)
+                hedge3 +=W_q2[a1]*Wtilde*call3
+        
+            error_gq2[j] = hedge + hedge2 + hedge3 - call[j] -error_gq22 * np.exp(r* i *delta_t)
+            if i==21:
+                money_from_u2_calls[j] = hedge2 + hedge3
+                
+        else:
+            #error after time u1 is hedge value+ money invested in bank after selling u2 maturity calls
+            #+ interest from initial money borrowed/invested             
+            error_gq2[j] = hedge + money_from_u2_calls[j] * np.exp(r*(t[i-1]-u2)) \
+            -error_gq22 * np.exp(r* i *delta_t) - call[j]
+        
+    rmse_c=np.sqrt(np.square(error_c).mean())
+    rmse_c_a=np.sqrt(np.square(error_c_a).mean())
+    rmse_d=np.sqrt(np.square(hedge_error).mean())
+    rmse_gq1=np.sqrt(np.square(error_gq1).mean())
+    rmse_gq2=np.sqrt(np.square(error_gq2).mean())
+    
+    
+    
+    percentile_ninetyfive_c.append(np.percentile(error_c * np.exp(-r * t[i-1]),95))
+    percentile_ninetyfive_c_a.append(np.percentile(error_c_a * np.exp(-r * t[i-1]),95))
+    percentile_ninetyfive_dh.append(np.percentile(hedge_error * np.exp(-r * t[i-1]),95))
+    percentile_ninetyfive_dh2.append(np.percentile(hedge_error2 * np.exp(-r * t[i-1]),95))
+    percentile_ninetyfive_gq1.append(np.percentile(error_gq1  * np.exp(-r * t[i-1]),95))
+    percentile_ninetyfive_gq2.append(np.percentile(error_gq2  * np.exp(-r * t[i-1]),95))
+    percentile_five_c.append(np.percentile(error_c * np.exp(-r * t[i-1]),5))
+    percentile_five_c_a.append(np.percentile(error_c_a * np.exp(-r * t[i-1]),5))
+    percentile_five_dh.append(np.percentile(hedge_error * np.exp(-r * t[i-1]),5))
+    percentile_five_dh2.append(np.percentile(hedge_error2 * np.exp(-r * t[i-1]),5))
+    percentile_five_gq1.append(np.percentile(error_gq1 * np.exp(-r * t[i-1]),5))                                 
+    percentile_five_gq2.append(np.percentile(error_gq2 * np.exp(-r * t[i-1]),5))
+                                     
+    print("The 95 percentile of the error using CW_b at time", str(t[i-1]),"is:", np.percentile(error_c,95))
+    print("The 95 percentile of the error using CW_a at time", str(t[i-1]),"is:", np.percentile(error_c_a,95))
+    print("The 95 percentile of the error using delta hedging at time", str(t[i-1]),"is:", np.percentile(hedge_error,95))
+    print("The 95 percentile of the error using quadrature with one short maturity at time", str(t[i-1]),"is:", np.percentile(error_gq1,95))
+    print("The 95 percentile of the error using quadrature with two short maturities at time", str(t[i-1]),"is:", np.percentile(error_gq2,95))
+    
+    print("The 5 percentile of the error using CW_b at time", str(t[i-1]),"is:", np.percentile(error_c,5))
+    print("The 5 percentile of the error using CW_a at time", str(t[i-1]),"is:", np.percentile(error_c_a,5))
+    print("The 5 percentile of the error using delta hedging at time", str(t[i-1]),"is:", np.percentile(hedge_error,5))
+    print("The 5 percentile of the error using quadrature with one short maturity at time", str(t[i-1]),"is:", np.percentile(error_gq1,5))
+    print("The 5 percentile of the error using quadrature with two short maturities at time", str(t[i-1]),"is:", np.percentile(error_gq2,5))
+    
+    
+    print("The RMSE of CW_b at time", str(t[i-1]),"is:", rmse_c)
+    print("The RMSE of CW_a at time", str(t[i-1]),"is:", rmse_c_a)
+    print("The RMSE of delta hedging at time", str(t[i-1]),"is:", rmse_d)
+    print("The RMSE of quadrature with one short maturity at time", str(t[i-1]),"is:", rmse_gq1)
+    print("The RMSE of quadrature with two short maturities at time", str(t[i-1]),"is:", rmse_gq2)
+    mean_c=error_c.mean()
+    mean_c_a=error_c_a.mean()
+    mean_d=hedge_error.mean()
+    mean_gq1=error_gq1.mean()
+    mean_gq2=error_gq2.mean()
+    mean_target=call.mean()
+    
+    target_value.append(mean_target * np.exp(-r * t[i-1]) )
+    mean_CW.append(mean_c * np.exp(-r * t[i-1]))
+    mean_CW_a.append(mean_c_a * np.exp(-r * t[i-1]))
+    mean_DH.append(mean_d * np.exp(-r * t[i-1]))
+    mean_GQ1.append(mean_gq1 * np.exp(-r * t[i-1]))
+    mean_GQ2.append(mean_gq2 * np.exp(-r * t[i-1]))
+    print("The mean of the error using CW_b at time", str(t[i-1]),"is:", mean_c)
+    print("The mean of the error using CW_a at time", str(t[i-1]),"is:", mean_c_a)
+    print("The mean of the error using delta hedging at time", str(t[i-1]),"is:",mean_d)
+    print("The mean of the error using quadrature with one short maturity at time", str(t[i-1]),"is:",mean_gq1)
+    print("The mean of the error using quadrature with two short maturities at time", str(t[i-1]),"is:", mean_gq2)
+    MAE_c=np.abs(error_c).mean()
+    MAE_c_a=np.abs(error_c_a).mean()
+    MAE_d=np.abs(hedge_error).mean()
+    MAE_gq1=np.abs(error_gq1).mean()
+    MAE_gq2=np.abs(error_gq2).mean()
+    print("The MAE of the error using CW_b at time", str(t[i-1]),"is:", MAE_c)
+    print("The MAE of the error using CW_a at time", str(t[i-1]),"is:", MAE_c_a)
+    print("The MAE of the error using delta hedging at time", str(t[i-1]),"is:",MAE_d)
+    print("The MAE of the error using quadrature with one short maturity at time", str(t[i-1]),"is:",MAE_gq1)
+    print("The MAE of the error using quadrature with two short maturities at time", str(t[i-1]),"is:", MAE_gq2)
+    Min_c=np.min(error_c)
+    Min_c_a=np.min(error_c_a)
+    Min_d=np.min(hedge_error)
+    Min_gq1=np.min(error_gq1)
+    Min_gq2=np.min(error_gq2)
+    print("The Min of the error using CW_b at time", str(t[i-1]),"is:", Min_c)
+    print("The Min of the error using CW_a at time", str(t[i-1]),"is:", Min_c_a)
+    print("The Min of the error using delta hedging at time", str(t[i-1]),"is:",Min_d)
+    print("The Min of the error using quadrature with one short maturity at time", str(t[i-1]),"is:",Min_gq1)
+    print("The Min of the error using quadrature with two short maturities at time", str(t[i-1]),"is:", Min_gq2)
+    Max_c=np.max(error_c)
+    Max_c_a=np.max(error_c_a)
+    Max_d=np.max(hedge_error)
+    Max_gq1=np.max(error_gq1)
+    Max_gq2=np.max(error_gq2)
+    print("The Max of the error using CW_b at time", str(t[i-1]),"is:", Max_c)
+    print("The Max of the error using CW_a at time", str(t[i-1]),"is:", Max_c_a)
+    print("The Max of the error using delta hedging at time", str(t[i-1]),"is:",Max_d)
+    print("The Max of the error using quadrature with one short maturity at time", str(t[i-1]),"is:",Max_gq1)
+    print("The Max of the error using quadrature with two short maturities at time", str(t[i-1]),"is:", Max_gq2)
+    skew_c=si.skew(error_c,bias=False)
+    skew_c_a=si.skew(error_c_a,bias=False)
+    skew_d=si.skew(hedge_error,bias=False)
+    skew_gq1=si.skew(error_gq1,bias=False)
+    skew_gq2=si.skew(error_gq2,bias=False)
+    print("The skewness of the error using CW_b at time", str(t[i-1]),"is:", skew_c)
+    print("The skewness of the error using CW_a at time", str(t[i-1]),"is:", skew_c_a)
+    print("The skewness of the error using delta hedging at time", str(t[i-1]),"is:",skew_d)
+    print("The skewness of the error using quadrature with one short maturity at time", str(t[i-1]),"is:",skew_gq1)
+    print("The skewness of the error using quadrature with two short maturities at time", str(t[i-1]),"is:", skew_gq2)
+    kurtosis_c=si.kurtosis(error_c)
+    kurtosis_c_a=si.kurtosis(error_c_a)
+    kurtosis_d=si.kurtosis(hedge_error)
+    kurtosis_gq1=si.kurtosis(error_gq1)
+    kurtosis_gq2=si.kurtosis(error_gq2)
+    print("The kurtosis of the error using CW_b at time", str(t[i-1]),"is:", kurtosis_c)
+    print("The kurtosis of the error using CW_a at time", str(t[i-1]),"is:", kurtosis_c_a)
+    print("The kurtosis of the error using delta hedging at time", str(t[i-1]),"is:",kurtosis_d)
+    print("The kurtosis of the error using quadrature with one short maturity at time", str(t[i-1]),"is:",kurtosis_gq1)
+    print("The kurtosis of the error using quadrature with two short maturities at time", str(t[i-1]),"is:", kurtosis_gq2)
+
+
+
+#plot to check martingale property
+import matplotlib.pyplot as plt
+import pylab
+N=np.arange(1000)
+
+
+plt.plot(t, mean_GQ1, label='GQ1 mean')
+plt.plot(t,mean_CW,'o', label='CW_b mean')
+plt.plot(t,mean_CW_a, label='CW_a mean')
+plt.plot(t, mean_DH, label='DH mean')
+plt.plot(t, mean_GQ2, label='GQ2 mean')
+plt.plot(t,percentile_ninetyfive_c,label='CW_b disc 95 PFA')
+plt.plot(t,percentile_five_c,label='CW_b disc 5 PFA')
+plt.plot(t,percentile_ninetyfive_c_a,label='CW_a disc 95 PFA')
+plt.plot(t,percentile_five_c_a,label='CW_a disc 5 PFA')
+plt.plot(t,percentile_ninetyfive_dh,label='DH disc 95 PFA')
+plt.plot(t,percentile_five_dh,'*',label='DH disc 5 PFA')
+plt.plot(t,percentile_ninetyfive_gq1,'^',label='GQ1 disc 95 PFA')
+plt.plot(t,percentile_five_gq1,'x',label='GQ1 disc 5 PFA')
+plt.plot(t,percentile_ninetyfive_gq2,'^',label='GQ_2 disc 95 PFA')
+plt.plot(t,percentile_five_gq2,'m*',label='GQ_2 disc 5 PFA')
+plt.legend()
+
+plt.show()
+
+plt.figure(figsize=(7,7))
+plt.rc('legend',fontsize=10)
+U2=[u2 for i in range(len(t))]
+plt.plot(t,percentile_ninetyfive_c,label='CW_b disc 95 PFA')
+plt.plot(t,percentile_five_c,label='CW_b disc 5 PFA')
+plt.plot(t,percentile_ninetyfive_c_a,label='CW_a disc 95 PFA')
+plt.plot(t,percentile_five_c_a,label='CW_a disc 5 PFA')
+
+plt.plot(t,percentile_ninetyfive_gq1,'^',label='GQ1 disc 95 PFA')
+plt.plot(t,percentile_five_gq1,'x',label='GQ1 disc 5 PFA')
+plt.plot(t,percentile_ninetyfive_gq2,'^',label='GQ_2 disc 95 PFA')
+plt.plot(t,percentile_five_gq2,'m*',label='GQ_2 disc 5 PFA')
+
+plt.legend()
+plt.show()
+
+
+
+plt.plot(t,percentile_ninetyfive_dh,label='DH disc 95 PFA')
+plt.plot(t,percentile_five_dh,'*',label='DH disc 5 PFA')
+plt.plot(t,percentile_ninetyfive_dh2,label='DH2 disc 95 PFA')
+plt.plot(t,percentile_five_dh2,'*',label='DH2 disc 5 PFA')
+plt.legend()
+plt.show()
+# create a figure for the data
+
+figData = pylab.figure()
+ax = pylab.gca()
+pylab.plot(t, mean_GQ1, label='GQ1 mean')
+pylab.plot(t,mean_CW,'o', label='CW_b mean')
+pylab.plot(t,mean_CW_a, label='CW_a mean')
+pylab.plot(t, mean_DH, label='DH mean')
+pylab.plot(t, mean_GQ2, label='GQ2 mean')
+pylab.plot(t,percentile_ninetyfive_c,label='CW_b disc 95 PFA')
+pylab.plot(t,percentile_five_c,label='CW_b disc 5 PFA')
+pylab.plot(t,percentile_ninetyfive_c_a,label='CW_a disc 95 PFA')
+pylab.plot(t,percentile_five_c_a,label='CW_a disc 5 PFA')
+pylab.plot(t,percentile_ninetyfive_dh,label='DH disc 95 PFA')
+pylab.plot(t,percentile_five_dh,'*',label='DH disc 5 PFA')
+pylab.plot(t,percentile_ninetyfive_gq1,'^',label='GQ1 disc 95 PFA')
+pylab.plot(t,percentile_five_gq1,'x',label='GQ1 disc 5 PFA')
+pylab.plot(t,percentile_ninetyfive_gq2,'^',label='GQ_2 disc 95 PFA')
+pylab.plot(t,percentile_five_gq2,'m*',label='GQ_2 disc 5 PFA')
+
+# create a second figure for the legend
+figLegend = pylab.figure(figsize = (1.5,1.3))
+
+# produce a legend for the objects in the other figure
+pylab.figlegend(*ax.get_legend_handles_labels(), loc = 'upper left')
+
+pylab.show()
+# save the two figures to files
+figData.savefig("plot.png")
+figLegend.savefig("legend.png")
+
+
+
+def BS_call(S,t,K,T):
+    d1= np.divide(np.log(np.divide(S,K)) + (r -div + 0.5 * sigma ** 2) * (T-t),\
+                  sigma * np.sqrt(T-t))
+    d2= np.divide(np.log(np.divide(S,K)) + (r -div - 0.5 * sigma ** 2) * (T-t),\
+                  sigma * np.sqrt(T-t))
+    call = (S * np.exp((-div)*(T-t))* si.norm.cdf(d1, 0.0, 1.0) \
+                   - K * np.exp(-r * (T-t)) * si.norm.cdf(d2, 0.0, 1.0))
+    return call
+
+
+#computing stock paths for delta
+Nsim = 1000
+Nsteps= 40
+
+
+S_u =np.zeros((Nsim,Nsteps+1))
+S_d = np.zeros((Nsim,Nsteps+1))
+Delta = np.zeros((Nsim,Nsteps+1))
+hedge_error_d = np.zeros((Nsim, Nsteps))
+value_d = np.zeros((Nsim, Nsteps+1))
+
+Delta_s = 0.2
+
+S_u[:,0]= S0 + Delta_s
+S_d[:,0]= S0 - Delta_s
+
+K= strike
+print(K)
+print(S[1,0])
+Delta[:,0] = np.divide(BS_call(S_u[:,0],0,K,T) - BS_call(S_d[:,0],0,K,T),\
+                                S_u[:,0]-S_d[:,0])
+value_d[:,0] = BS_call(S[:,0],0,K,T)
+
+print("Target option value", value_d[1,0])
+print("Delta at 0 using FD", Delta[1,0])
+print("Delta at 0 using formula", delta[1,0])
+
+DH_finite =[]
+percentile_ninetyfive_DHF =[]
+percentile_five_DHF =[]
+for i in range(1,Nsteps+1):
+        S_u[:,i] = S_u[:,i-1] * np.exp((r-div-(sigma**2)/2) * (delta_t) +\
+                                   sigma * np.sqrt(delta_t)*Z[:,i-1])
+        S_d[:,i] =  S_d[:,i-1] * np.exp((r-div-(sigma**2)/2) * (delta_t) +\
+                                   sigma * np.sqrt(delta_t)*Z[:,i-1])
+        Delta[:,i] = np.divide(BS_call(S_u[:,i],t[i-1],K,T) - BS_call(S_d[:,i],t[i-1],K,T),\
+                                S_u[:,i]-S_d[:,i])
+        
+        #computing the delta hedge at time t[i-1]
+        value_d[:,i]=Delta[:,i-1]*S[:,i]+(value_d[:,i-1]-Delta[:,i-1]*S[:,i-1])*np.exp(r*delta_t)
+        hedge_error_d[:,i-1]= value_d[:,i]-BS_call(S[:,i], t[i-1], K, T )
+        
+        print("Mean of Delta hedging error at time", t[i-1], "is:", hedge_error_d[:,i-1].mean())
+        DH_finite.append(np.exp(-r*t[i-1])*hedge_error_d[:,i-1].mean())
+        percentile_ninetyfive_DHF.append(np.percentile(hedge_error_d[:,i-1] * np.exp(-r * t[i-1]),95))
+        percentile_five_DHF.append(np.percentile(hedge_error_d[:,i-1] * np.exp(-r * t[i-1]),5))
+
+
+plt.plot(t,percentile_ninetyfive_dh,label='DH disc 95 PFA')
+plt.plot(t,percentile_five_dh,'*',label='DH disc 5 PFA')
+plt.plot(t,percentile_ninetyfive_DHF,label='DHF disc 95 PFA')
+plt.plot(t,percentile_five_DHF,'*',label='DHF disc 5 PFA')
+plt.legend()
+plt.show()
+
+
+plt.plot(t,percentile_ninetyfive_dh,label='DH disc 95 PFA')
+plt.plot(t,percentile_five_dh,'*',label='DH disc 5 PFA')
+plt.legend()
+plt.show()
+
+    
