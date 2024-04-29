@@ -1,0 +1,855 @@
+#merton jump diffusion model
+import random
+import numpy as np
+import scipy.stats as si
+from scipy import integrate
+from scipy.special import roots_legendre,roots_hermite,roots_laguerre
+import math
+import time
+from numpy.linalg import inv
+#N-Number of time steps
+
+S0 = 100
+T = 1
+#short maturity
+u1 = 40/252
+u2 = 21/252
+
+
+
+print("M:",int(u2*252)-1)
+
+t = [((1 * (l+1))/252) for l in range(40)]#time-steps for rebalancing the delta hedge portfolio
+print(t)
+
+mu = 0.10
+r = 0.06
+strike = 100 #target strike
+
+
+#strike range for short maturity u1
+K1 = 60
+K2 = 120
+
+
+#strike range for short maturity u2
+K21 = 60
+K22 = 120
+
+lmda = 2
+mu_j =-0.1
+sigma_j = 0.13
+sigma = 0.14
+div = 0.02
+
+start = time.time()
+
+
+g =  np.exp(mu_j + 0.5 *  sigma_j **2) - 1
+
+sum_n = 0
+for n in range(100):
+    r_n = r - lmda * g + (n * ( mu_j +  0.5 *  sigma_j **2))/T
+    sigma_n = np.sqrt(sigma **2 + (n *  sigma_j **2)/T )
+    d_1n = np.divide(np.log(S0/strike) + (r_n -div + 0.5 * (sigma_n **2)) * T, sigma_n * np.sqrt(T))
+    Pr_n = np.exp(-lmda * (T)) * np.divide( ( lmda * T)**n, math.factorial(n) )
+    sum_n += Pr_n * (S0 * np.exp((r_n - div) * T) * si.norm.cdf(d_1n) - strike * si.norm.cdf(d_1n - sigma_n * np.sqrt(T)))
+    
+
+callT= np.exp(-r * T) * sum_n
+print("Value of target option at time 0 is:", callT)
+
+
+v = sigma **2 + lmda * (mu_j**2 + sigma_j **2)
+print("The annualised variance v is:", v)
+
+#number of quadrature points for CW_a
+Q_a=1
+
+
+#carr-wu abscissas
+[x_a,w_a]=roots_hermite(Q_a)
+
+K11_a=np.zeros(Q_a)
+W11_a=np.zeros(Q_a)
+
+
+#computing Carr-Wu strike points and weights
+for a in range(Q_a):
+    #first set of strike points and weights corresponding to u1
+    
+    K11_a[a]= strike * np.exp(x_a[a]* np.sqrt(2 * v * (T-u1))+ (div- r - 0.5 * v) * (T-u1))#strike points
+    sum_w = 0
+    for n in range(100):
+        r_n = r - lmda * g + (n * ( mu_j +  0.5 *  sigma_j **2))/(T-u1)
+        sigma_n = np.sqrt(sigma **2 + (n *  sigma_j **2)/(T-u1))
+        d_1n = np.divide(np.log(K11_a[a]/strike) + (r_n -div + 0.5 * sigma_n **2) * (T-u1), sigma_n* np.sqrt(T-u1))
+        Pr_n = np.exp(-lmda * (T-u1)) * np.divide( ( lmda * (T-u1))**n, math.factorial(n) )
+        sum_w += Pr_n * np.exp((r_n - div) * (T-u1)) * np.divide(si.norm.pdf(d_1n), K11_a[a] * sigma_n * np.sqrt(T -u1))
+    
+    W_k = np.exp(-r * (T-u1)) * sum_w
+    W11_a[a]=np.divide(W_k * K11_a[a] * np.sqrt(2 * v * (T-u1)), np.exp(-x_a[a]**2)) * w_a[a] #weights
+
+print("The  CW_a strike points are:", K11_a) 
+print("The CW_a weights are:", W11_a)
+
+hedge_c_a = 0
+n_c_a = 0
+for a in range(Q_a):
+    sum_n = 0
+    for n in range(100):
+        r_n = r - lmda * g + (n * ( mu_j +  0.5 *  sigma_j **2))/u1
+        sigma_n = np.sqrt(sigma **2 + (n *  sigma_j **2)/u1 )
+        d_1n = np.divide(np.log(S0/K11_a[a]) + (r_n -div + 0.5 * sigma_n **2) * u1, sigma_n * np.sqrt(u1))
+        Pr_n = np.exp(-lmda * (u1)) * np.divide( ( lmda * u1)**n, math.factorial(n) )
+        sum_n += Pr_n * (S0 * np.exp((r_n - div) * u1) * si.norm.cdf(d_1n)\
+                         - K11_a[a] * si.norm.cdf(d_1n - sigma_n * np.sqrt(u1)))
+    if K1<=K11_a[a]<=K2:
+        n_c_a += 1
+        call_u1= np.exp(-r * u1) * sum_n
+        hedge_c_a += W11_a[a] * call_u1
+
+
+print("The value of hedge portfolio using CW_a is:", hedge_c_a)
+error_c_a = hedge_c_a - callT
+print("The number of quadrature points in the range", [K1,K2], "are:", n_c_a)
+
+B0_a =error_c_a # amount borrowed from bank to set up the hedge
+print("The error at time 0 using CW_a is:", error_c_a)
+#number of quadrature points for CW_b
+Q_c=20
+
+
+#carr-wu abscissas
+[x,w]=roots_hermite(Q_c)
+
+K11=np.zeros(Q_c)
+W11=np.zeros(Q_c)
+
+
+#computing Carr-Wu strike points and weights
+for a in range(Q_c):
+    #first set of strike points and weights corresponding to u1
+    
+    K11[a]= strike * np.exp(x[a]* np.sqrt(2 * v * (T-u1))+ (div- r - 0.5 * v) * (T-u1))#strike points
+    sum_w = 0
+    for n in range(100):
+        r_n = r - lmda * g + (n * ( mu_j +  0.5 *  sigma_j **2))/(T-u1)
+        sigma_n = np.sqrt(sigma **2 + (n *  sigma_j **2)/(T-u1))
+        d_1n = np.divide(np.log(K11[a]/strike) + (r_n -div + 0.5 * sigma_n **2) * (T-u1), sigma_n* np.sqrt(T-u1))
+        Pr_n = np.exp(-lmda * (T-u1)) * np.divide( ( lmda * (T-u1))**n, math.factorial(n) )
+        sum_w += Pr_n * np.exp((r_n - div) * (T-u1)) * np.divide(si.norm.pdf(d_1n), K11[a] * sigma_n * np.sqrt(T -u1))
+    
+    W_k = np.exp(-r * (T-u1)) * sum_w
+    W11[a]=np.divide(W_k * K11[a] * np.sqrt(2 * v * (T-u1)), np.exp(-x[a]**2)) * w[a] #weights
+
+print("The CW_b strike points are:", K11) 
+print("The CW_b weights are:", W11)
+
+hedge_c = 0
+n_c = 0
+for a in range(Q_c):
+    sum_n = 0
+    for n in range(100):
+        r_n = r - lmda * g + (n * ( mu_j +  0.5 *  sigma_j **2))/u1
+        sigma_n = np.sqrt(sigma **2 + (n *  sigma_j **2)/u1 )
+        d_1n = np.divide(np.log(S0/K11[a]) + (r_n -div + 0.5 * sigma_n **2) * u1, sigma_n * np.sqrt(u1))
+        Pr_n = np.exp(-lmda * (u1)) * np.divide( ( lmda * u1)**n, math.factorial(n) )
+        sum_n += Pr_n * (S0 * np.exp((r_n - div) * u1) * si.norm.cdf(d_1n)\
+                         - K11[a] * si.norm.cdf(d_1n - sigma_n * np.sqrt(u1)))
+    if K1<=K11[a]<=K2:
+        n_c += 1
+        call_u1= np.exp(-r * u1) * sum_n
+        hedge_c += W11[a] * call_u1
+    
+    
+     
+
+print("The value of hedge portfolio using CW_b is:", hedge_c)
+error_c = hedge_c - callT
+print("The number of quadrature points in the range", [K1,K2], "are:", n_c)
+
+B0 =error_c # amount borrowed from bank to set up the hedge
+#number of quadrature points for GQ1
+Q1=Q_c
+[t1,A1]=roots_legendre(Q1)
+K_q1=np.zeros(Q1)
+W_q1=np.zeros(Q1)
+
+for a in range(Q1):
+    K_q1[a]=0.5*(K2-K1)*t1[a] +0.5*(K2+K1)
+    
+    
+    sum_w = 0
+    for n in range(100):
+        r_n = r - lmda * g + (n * ( mu_j +  0.5 *  sigma_j **2))/(T-u1)
+        sigma_n = np.sqrt(sigma **2 + (n *  sigma_j **2)/(T-u1))
+        d_1n = np.divide(np.log(K_q1[a]/strike) + (r_n -div + 0.5 * sigma_n **2) * (T-u1), sigma_n* np.sqrt(T-u1))
+        Pr_n = np.exp(-lmda * (T-u1)) * np.divide( ( lmda * (T-u1))**n, math.factorial(n) )
+        sum_w += Pr_n * np.exp((r_n - div) * (T-u1)) * np.divide(si.norm.pdf(d_1n), K_q1[a] * sigma_n * np.sqrt(T -u1))
+    
+    W_k = np.exp(-r * (T-u1)) * sum_w
+    W_q1[a]= 0.5*(K2-K1)*A1[a] * W_k #weights
+
+print("The first set of Gaussian quadrature strike points are:", K_q1)
+print("The first set of Gaussian quadrature weights are:", W_q1)
+
+
+
+
+hedge_gq1 = 0
+for a in range(Q1):
+    sum_n = 0
+    for n in range(100):
+        r_n = r - lmda * g + (n * ( mu_j +  0.5 *  sigma_j **2))/u1
+        sigma_n = np.sqrt(sigma **2 + (n *  sigma_j **2)/u1 )
+        d_1n = np.divide(np.log(S0/K_q1[a]) + (r_n -div + 0.5 * sigma_n **2) * u1, sigma_n * np.sqrt(u1))
+        Pr_n = np.exp(-lmda * (u1)) * np.divide( ( lmda * u1)**n, math.factorial(n) )
+        sum_n += Pr_n * (S0 * np.exp((r_n - div) * u1) * si.norm.cdf(d_1n)\
+              - K_q1[a] * si.norm.cdf(d_1n - sigma_n * np.sqrt(u1)))
+   
+    call_u1= np.exp(-r * u1) * sum_n
+    hedge_gq1 += W_q1[a] * call_u1
+
+error_gq1 = hedge_gq1 - callT
+print("The value of hedge portfolio using GQ1 is:", hedge_gq1)
+
+B0_q1 = error_gq1 #amount borrowed from bank to set up the hedge
+
+print("The error at time 0 using Carr-Wu is:", error_c)
+print("The error at time 0 using GQ1 is:", error_gq1)
+#number of quadrature points corresponding to second short maturity u2
+Q2=Q1
+
+[t2,A2]=roots_legendre(Q2)
+K_q2=np.zeros(Q2)
+W_q2=np.zeros(Q2)
+for a in range(Q2):
+    K_q2[a]=0.5*(K22-K21)*t2[a] +0.5*(K22+K21)
+    W_q2[a]=0.5*(K22-K21)*A2[a]
+print("The second set of Gaussian quadrature strike points are:", K_q2)
+
+
+
+#computing the integral over [0, K11] using Gauss-Laguerre
+[x_q11,w_q11]=roots_legendre(5)
+
+#weights corresponding to [0,K11]
+weight_quad = np.zeros(Q2)
+
+first_integral = 0
+for n_q2 in range(Q2):
+    sum_inner = 0
+    for n1 in range(100):
+        Pr_n_tilde = np.exp(-lmda * (u1 - u2)) * np.divide( ( lmda * (u1 - u2))**n1, math.factorial(n1) )
+        r_n_tilde = r - lmda * g + (n1 * ( mu_j +  0.5 *  sigma_j **2))/(u1 - u2)
+        sigma_n_tilde = np.sqrt(sigma **2 + (n1 *  sigma_j **2)/(u1-u2) )
+        
+        for m1 in range(100):
+            Pr_m = np.exp(-lmda * (T - u1)) * np.divide( ( lmda * (T - u1))**m1, math.factorial(m1) )
+            r_m = r - lmda * g + (m1 * ( mu_j +  0.5 *  sigma_j **2))/(T - u1)
+            sigma_m = np.sqrt(sigma **2 + (m1 *  sigma_j **2)/(T-u1) )
+            sum_w = 0
+            for n_q1 in range(5):
+                K_1_m = 0.5 * (K1) * x_q11[n_q1] + 0.5 * (K1)
+                W_1_m = 0.5 * (K1) * w_q11[n_q1]
+                d_1m = np.divide(np.log(K_1_m/strike) + (r_m -div + 0.5 * sigma_m **2) * (T - u1),\
+                                 sigma_m * np.sqrt(T - u1))
+                d_1n_xm = np.divide(np.log(K_q2[n_q2]/K_1_m) + (r_n_tilde -div + 0.5 * sigma_n_tilde **2) * (u1 - u2),\
+                                    sigma_n_tilde* np.sqrt(u1 - u2))
+                sum_w += W_1_m * np.divide(si.norm.pdf(d_1n_xm),K_q2[n_q2] * sigma_n_tilde * np.sqrt(u1 - u2))\
+                * np.divide(si.norm.pdf(d_1m),K_1_m * sigma_m * np.sqrt(T - u1))
+                
+            sum_inner += Pr_n_tilde * Pr_m * np.exp((r_n_tilde - div) * (u1 - u2)) \
+            * np.exp((r_m - div) * (T - u1)) * sum_w
+        
+    weight_quad[n_q2] = np.exp(-r * (T-u2)) * sum_inner
+        
+    sum_call = 0
+    for n in range(100):
+        r_n = r - lmda * g + (n * ( mu_j +  0.5 *  sigma_j **2))/u2
+        sigma_n = np.sqrt(sigma **2 + (n *  sigma_j **2)/u2 )
+        d_1n = np.divide(np.log(S0/K_q2[n_q2]) + (r_n -div + 0.5 * sigma_n **2) * u2, sigma_n * np.sqrt(u2))
+        Pr_n = np.exp(-lmda * (u2)) * np.divide( ( lmda * u2)**n, math.factorial(n) )
+        sum_call += Pr_n * (S0 * np.exp((r_n - div) * u2) * si.norm.cdf(d_1n)\
+              - K_q2[n_q2] * si.norm.cdf(d_1n - sigma_n * np.sqrt(u2)))
+   
+    call_u2= np.exp(-r * u2) * sum_call
+        
+    first_integral += W_q2[n_q2] * weight_quad[n_q2] * call_u2
+
+
+#computing the integral over [K12,\infty] using Gauss-Laguerre
+[x_q1,w_q1]=roots_laguerre(20)
+
+#weights corresponding to the integral [K12,\infty]
+weight_lag = np.zeros(Q2)
+
+second_integral = 0
+for n_q2 in range(Q2):
+    sum_inner = 0
+    for n1 in range(100):
+        Pr_n_tilde = np.exp(-lmda * (u1 - u2)) * np.divide( ( lmda * (u1 - u2))**n1, math.factorial(n1) )
+        r_n_tilde = r - lmda * g + (n1 * ( mu_j +  0.5 *  sigma_j **2))/(u1 - u2)
+        sigma_n_tilde = np.sqrt(sigma **2 + (n1 *  sigma_j **2)/(u1-u2) )
+        
+        for m1 in range(100):
+            Pr_m = np.exp(-lmda * (T - u1)) * np.divide( ( lmda * (T - u1))**m1, math.factorial(m1) )
+            r_m = r - lmda * g + (m1 * ( mu_j +  0.5 *  sigma_j **2))/(T - u1)
+            sigma_m = np.sqrt(sigma **2 + (m1 *  sigma_j **2)/(T-u1) )
+            a_m = np.power(np.divide(np.log(K2/strike) + (r_m - div + 0.5 * sigma_m **2)*(T - u1), \
+                                         sigma_m * np.sqrt(2*(T-u1))), 2)
+            sum_w = 0
+            for n_q1 in range(20):
+                
+                K1_xm = strike * np.exp(sigma_m * np.sqrt(2 * (x_q1[n_q1] + a_m) * (T-u1))\
+                - (r_m - div + 0.5 * sigma_m **2) * (T-u1))
+                d_1n_xm = np.divide(np.log(K_q2[n_q2]/K1_xm) + (r_n_tilde -div + 0.5 * sigma_n_tilde **2) * (u1 - u2),\
+                                    sigma_n_tilde* np.sqrt(u1 - u2))
+                f_m = np.divide(np.exp((- 0.5) * d_1n_xm **2), 2 * np.pi * K_q2[n_q2] * \
+                              sigma_n_tilde * np.sqrt(2 * (x_q1[n_q1] + a_m) * (u1 - u2)))
+                sum_w += w_q1[n_q1] * f_m
+            
+            sum_inner += Pr_n_tilde * Pr_m * np.exp((r_n_tilde - div) * (u1 - u2)) \
+            * np.exp((r_m - div) * (T - u1)) * np.exp(-a_m) * sum_w
+        
+    weight_lag[n_q2] = np.exp(-r * (T-u2)) * sum_inner
+        
+    sum_call = 0
+    for n in range(100):
+        r_n = r - lmda * g + (n * ( mu_j +  0.5 *  sigma_j **2))/u2
+        sigma_n = np.sqrt(sigma **2 + (n *  sigma_j **2)/u2 )
+        d_1n = np.divide(np.log(S0/K_q2[n_q2]) + (r_n -div + 0.5 * sigma_n **2) * u2, sigma_n * np.sqrt(u2))
+        Pr_n = np.exp(-lmda * (u2)) * np.divide( ( lmda * u2)**n, math.factorial(n) )
+        sum_call += Pr_n * (S0 * np.exp((r_n - div) * u2) * si.norm.cdf(d_1n)\
+              - K_q2[n_q2] * si.norm.cdf(d_1n - sigma_n * np.sqrt(u2)))
+   
+    call_u2= np.exp(-r * u2) * sum_call
+        
+    second_integral +=  W_q2[n_q2] * weight_lag[n_q2] * call_u2
+
+hedge_gq2 = hedge_gq1 + first_integral + second_integral
+error_gq2 = hedge_gq2 - callT
+
+B0_q2 = error_gq2 #amount borrowed from bank to set up the hedge
+end = time.time()
+print("The error at time 0 in GQ2 is:", error_gq2)
+percent_reduction = np.divide(error_gq1 - error_gq2,error_gq1) * 100
+print("Percentage decrease in error using GQ2:", percent_reduction)
+print("Computational time is:", end -start)                
+                
+
+Target_call = callT
+
+import matplotlib.pyplot as plt
+Nsim=1000
+Nsteps=40
+
+M = int(u2*252)-1
+print(M)
+delta_t = 1/252
+
+stock_paths = np.zeros([Nsim,Nsteps+1])
+stock_paths[:,0] = S0
+
+np.random.seed(1) 
+Z1 = np.random.normal(size=[Nsim,Nsteps])
+Z2 = np.random.normal(size=[Nsim,Nsteps])
+Poisson = np.random.poisson(lmda*delta_t, [Nsim,Nsteps])
+
+for i in range(Nsteps):
+    stock_paths[:,i+1] = stock_paths[:,i] * np.exp((r-div-lmda * g - 0.5 * sigma **2)*delta_t \
+    + sigma * np.sqrt(delta_t) * Z1[:,i] + mu_j * Poisson[:,i] + np.sqrt(Poisson[:,i]) * sigma_j *Z2[:,i])
+    
+final_prices = stock_paths[:,-1]
+
+
+t = np.linspace(0, Nsteps, Nsteps+1)
+plt.plot(t,stock_paths.transpose())
+plt.show
+
+
+
+#computing the hedging error till short maturity u_1
+t = [((1 * (l+1))/252) for l in range(Nsteps)]#time-steps for rebalancing the delta hedge portfolio
+print(t)
+
+
+
+d_1n_T = np.zeros((Nsim,Nsteps))
+sum_n_T = np.zeros((Nsim,Nsteps))
+callT  = np.zeros((Nsim,Nsteps+1))
+
+hedge_c = np.zeros((Nsim,Nsteps))
+d_1n_c = np.zeros((Nsim,Nsteps))
+sum_n_c = np.zeros((Nsim,Nsteps))
+call_u1_c = np.zeros((Nsim,Nsteps+1))
+hedge_c_error = np.zeros((Nsim,Nsteps))
+
+hedge_c_a = np.zeros((Nsim,Nsteps))
+d_1n_c_a = np.zeros((Nsim,Nsteps))
+sum_n_c_a = np.zeros((Nsim,Nsteps))
+call_u1_c_a = np.zeros((Nsim,Nsteps+1))
+hedge_c_a_error = np.zeros((Nsim,Nsteps))
+
+hedge_gq1 = np.zeros((Nsim,Nsteps))
+d_1n_gq1 = np.zeros((Nsim,Nsteps))
+sum_n_gq1 = np.zeros((Nsim,Nsteps))
+call_u1_gq1 = np.zeros((Nsim,Nsteps))
+hedge_gq1_error = np.zeros((Nsim,Nsteps))
+
+hedge_gq2 = np.zeros((Nsim,Nsteps))
+
+hedge_gq2_error = np.zeros((Nsim,Nsteps))
+
+money_in_bank_account =  np.zeros((Nsim,Nsteps))
+
+
+callT[:,0] = Target_call
+
+target_value = []
+percentile_ninetyfive_c_a = []
+percentile_ninetyfive_c = []
+percentile_ninetyfive_gq1 = []
+percentile_ninetyfive_gq2 = []
+percentile_five_c_a = []
+percentile_five_c = []
+percentile_five_gq1 = []                                 
+percentile_five_gq2 = []
+mean_CWa = []
+mean_CW = []
+mean_GQ1 = []
+mean_GQ2 = []
+
+for i in range(Nsteps):
+    sum_n_T1 = 0
+    for n in range(100):
+        r_n = r - lmda * g + (n * ( mu_j +  0.5 *  sigma_j **2))/(T-t[i])
+        sigma_n = np.sqrt(sigma **2 + (n *  sigma_j **2)/(T-t[i]))
+        d_1n_T1 = np.divide(np.log(stock_paths[:,i+1]/strike)\
+                             + (r_n -div + 0.5 * (sigma_n **2)) * (T-t[i]), sigma_n * np.sqrt(T-t[i]))
+        Pr_n = np.exp(-lmda * (T-t[i])) * np.divide( ( lmda * (T-t[i]))**n, math.factorial(n) )
+        sum_n_T1 += Pr_n * (stock_paths[:,i+1] * np.exp((r_n - div) * (T-t[i])) * si.norm.cdf(d_1n_T1) \
+                             - strike * si.norm.cdf(d_1n_T1- sigma_n * np.sqrt(T-t[i])))
+    
+
+    callT[:,i+1]= np.exp(-r * (T-t[i])) * sum_n_T1
+    
+    #CW_a hedge
+    n_c_a = 0
+    for a in range(Q_a):
+        if i <Nsteps-1:
+            sum_n = 0
+            for n in range(100):
+                r_n = r - lmda * g + (n * ( mu_j +  0.5 *  sigma_j **2))/(u1 -t[i])
+                sigma_n = np.sqrt(sigma **2 + (n *  sigma_j **2)/ (u1 -t[i]))
+                d_1n = np.divide(np.log(stock_paths[:,i+1]/K11_a[a]) +\
+                             (r_n -div + 0.5 * sigma_n **2) * u1, sigma_n * np.sqrt(u1 -t[i]))
+                Pr_n = np.exp(-lmda * (u1 -t[i])) * np.divide( ( lmda * (u1-t[i]))**n, math.factorial(n) )
+                sum_n += Pr_n * ( stock_paths[:,i+1]* np.exp((r_n - div) * (u1 -t[i])) * si.norm.cdf(d_1n)\
+                         - K11_a[a] * si.norm.cdf(d_1n - sigma_n * np.sqrt(u1 -t[i])))
+            if K1<=K11_a[a]<=K2:
+                call_u1= np.exp(-r * (u1 -t[i])) * sum_n
+        else:
+            call_u1 = np.maximum(stock_paths[:,i+1]-K11_a[a],0)
+        hedge_c_a[:,i] += W11_a[a] * call_u1 
+    
+    #CW_a hedge error
+    hedge_c_a_error[:,i] =  hedge_c_a[:,i] -  B0_a * np.exp((r -div)* t[i]) - callT[:,i+1]
+    
+    #computing CW_b hedge
+    for a in range(Q_c):
+        if i< (Nsteps -1):
+            sum_n_c1=0
+            for n in range(100):
+                r_n = r - lmda * g + (n * ( mu_j +  0.5 *  sigma_j **2))/(u1 -t[i])
+                sigma_n = np.sqrt(sigma **2 + (n *  sigma_j **2)/(u1 -t[i]))
+                d_1n_1 = np.divide(np.log(stock_paths[:,i+1]/K11[a])\
+                                 + (r_n -div + 0.5 * sigma_n **2) * (u1 -t[i]), sigma_n * np.sqrt(u1 -t[i]))
+                Pr_n = np.exp(-lmda * (u1 -t[i])) * np.divide( ( lmda * (u1 -t[i]))**n, math.factorial(n) )
+                sum_n_c1 += Pr_n * (stock_paths[:,i+1] * np.exp((r_n - div) * (u1 -t[i])) * si.norm.cdf(d_1n_1)\
+                         - K11[a] * si.norm.cdf(d_1n_1 - sigma_n * np.sqrt(u1 -t[i])))
+            call_u1_c = np.exp(-r * (u1-t[i])) * sum_n_c1
+        else:
+            call_u1_c = np.maximum(stock_paths[:,i+1]-K11[a],0)
+        
+        if K1<K11[a]<K2:
+            hedge_c[:,i] += W11[a] * call_u1_c
+
+    #CW_b hedge error
+    hedge_c_error[:,i] =  hedge_c[:,i] -  B0 * np.exp((r -div)* t[i]) - callT[:,i+1]
+
+
+        
+    for a in range(Q1):
+        if i<(Nsteps-1):
+            sum_n_gq11 = 0
+            for n in range(100):
+                r_n = r - lmda * g + (n * ( mu_j +  0.5 *  sigma_j **2))/(u1 -t[i])
+                sigma_n = np.sqrt(sigma **2 + (n *  sigma_j **2)/(u1-t[i] ))
+                d_1n_gq11 = np.divide(np.log(stock_paths[:,i+1]/K_q1[a])\
+                                 + (r_n -div + 0.5 * sigma_n **2) * (u1-t[i]), sigma_n * np.sqrt(u1-t[i]))
+                Pr_n = np.exp(-lmda * (u1-t[i])) * np.divide( ( lmda * (u1-t[i]))**n, math.factorial(n) )
+                sum_n_gq11 += Pr_n * (stock_paths[:,i+1] * np.exp((r_n - div) * (u1-t[i])) * si.norm.cdf(d_1n_gq11)\
+                         - K_q1[a] * si.norm.cdf(d_1n_gq11 - sigma_n * np.sqrt(u1-t[i])))
+        
+            call_u1_gq1 = np.exp(-r * (u1-t[i])) * sum_n_gq11
+        else:
+            call_u1_gq1 = np.maximum(stock_paths[:,i+1] - K_q1[a],0)
+        hedge_gq1[:,i] += W_q1[a] * call_u1_gq1
+
+    hedge_gq1_error[:,i] =  hedge_gq1[:,i]  -  B0_q1 * np.exp((r-div) * t[i]) - callT[:,i+1]
+    
+    
+    #computing the integral over [0,K11] using Gaussian Quadrature
+    first_integral = 0
+    if i < np.int(M+1):
+        for n_q2 in range(Q2):
+            if i< M:
+                sum_call = 0
+                for n in range(100):
+                    r_n = r - lmda * g + (n * ( mu_j +  0.5 *  sigma_j **2))/(u2-t[i])
+                    sigma_n = np.sqrt(sigma **2 + (n *  sigma_j **2)/(u2-t[i]))
+                    d_1n = np.divide(np.log(stock_paths[:,i+1]/K_q2[n_q2]) \
+                                    + (r_n -div + 0.5 * sigma_n **2) * (u2-t[i]), sigma_n * np.sqrt(u2-t[i]))
+                    Pr_n = np.exp(-lmda * (u2-t[i])) * np.divide( ( lmda * (u2-t[i]))**n, math.factorial(n) )
+                    sum_call += Pr_n * ( stock_paths[:,i+1]* np.exp((r_n - div) * (u2-t[i])) * si.norm.cdf(d_1n)\
+                        - K_q2[n_q2] * si.norm.cdf(d_1n - sigma_n * np.sqrt(u2-t[i])))
+                call_u2= np.exp(-r * (u2-t[i])) * sum_call
+            if i == M:
+                call_u2 = np.maximum(stock_paths[:,i+1] - K_q2[n_q2],0)
+        
+            first_integral += W_q2[n_q2] * weight_quad[n_q2] * call_u2
+
+      
+        #computing the integral over [K12,\infty] using Gauss-Laguerre
+        second_integral = 0
+        for n_q2 in range(Q2):
+            if i< M:
+                sum_call = 0
+                for n in range(100):
+                    r_n = r - lmda * g + (n * ( mu_j +  0.5 *  sigma_j **2))/(u2-t[i])
+                    sigma_n = np.sqrt(sigma **2 + (n *  sigma_j **2)/(u2-t[i]) )
+                    d_1n = np.divide(np.log(stock_paths[:,i+1]/K_q2[n_q2])\
+                                 + (r_n -div + 0.5 * sigma_n **2) * u2, sigma_n * np.sqrt(u2-t[i]))
+                    Pr_n = np.exp(-lmda * (u2-t[i])) * np.divide( ( lmda * (u2-t[i]))**n, math.factorial(n) )
+                    sum_call += Pr_n * (stock_paths[:,i+1] * np.exp((r_n - div) * (u2-t[i])) * si.norm.cdf(d_1n)\
+                                    - K_q2[n_q2] * si.norm.cdf(d_1n - sigma_n * np.sqrt(u2-t[i])))
+                call_u2= np.exp(-r *(u2-t[i])) * sum_call
+            if i == M:
+                call_u2 = np.maximum(stock_paths[:,i+1] - K_q2[n_q2],0)
+            
+            second_integral +=  W_q2[n_q2] * weight_lag[n_q2] * call_u2
+            
+        money_in_bank_account[:,i] = first_integral + second_integral
+       
+        hedge_gq2[:,i] = hedge_gq1[:,i] + first_integral + second_integral
+    else:
+        hedge_gq2[:,i] = hedge_gq1[:,i] + np.exp((r-div)*(t[i]-u2)) * money_in_bank_account[:,M]
+        
+    hedge_gq2_error[:,i] =  hedge_gq2[:,i]  -  B0_q2 * np.exp((r-div) * t[i]) - callT[:,i+1]
+
+        
+
+    rmse_c_a=np.sqrt(np.square(hedge_c_a_error[:,i]).mean())  
+    rmse_c=np.sqrt(np.square(hedge_c_error[:,i]).mean())  
+    rmse_gq1=np.sqrt(np.square(hedge_gq1_error[:,i]).mean()) 
+    rmse_gq2=np.sqrt(np.square(hedge_gq2_error[:,i]).mean()) 
+    print("The 95th percentile of the error at time", str(t[i]),"using CW_a is:", np.percentile(hedge_c_a_error[:,i],95))
+    print("The 95th percentile of the error at time", str(t[i]),"using CW_b is:", np.percentile(hedge_c_error[:,i],95)) 
+    print("The 95th percentile of the error at time", str(t[i]),"using GQ_1 is:", np.percentile(hedge_gq1_error[:,i],95))
+    print("The 95th percentile of the error at time", str(t[i]),"using GQ_2 is:", np.percentile(hedge_gq2_error[:,i],95))
+    
+    print("The 5th percentile of the error at time", str(t[i]),"using CW_a is:", np.percentile(hedge_c_a_error[:,i],5))
+    print("The 5th percentile of the error at time", str(t[i]),"using CW_b is:", np.percentile(hedge_c_error[:,i],5)) 
+    print("The 5th percentile of the error at time", str(t[i]),"using GQ_1 is:", np.percentile(hedge_gq1_error[:,i],5))
+    print("The 5th percentile of the error at time", str(t[i]),"using GQ_2 is:", np.percentile(hedge_gq2_error[:,i],5))
+    
+    
+    print("The rmse of the error at time", str(t[i]),"using CW_a is:", rmse_c_a)
+    print("The rmse of the error at time", str(t[i]),"using CW_b is:", rmse_c)
+    print("The rmse of the error at time", str(t[i]),"using GQ_1 is:", rmse_gq1)
+    print("The rmse of the error at time", str(t[i]),"using GQ_2 is:", rmse_gq2)
+    disc_mean_c_a=np.exp(-r*t[i])*hedge_c_a_error[:,i].mean()
+    disc_mean_c=np.exp(-r*t[i])*hedge_c_error[:,i].mean()
+    disc_mean_gq1=np.exp(-r*t[i])*hedge_gq1_error[:,i].mean()
+    disc_mean_gq2=np.exp(-r*t[i])*hedge_gq2_error[:,i].mean()
+    
+    print("The mean error at time", str(t[i]), "using CW_a is:",np.exp(r*t[i])* disc_mean_c_a)
+    print("The mean error at time", str(t[i]), "using CW_b is:",np.exp(r*t[i])* disc_mean_c)
+    print("The mean error at time", str(t[i]), "using GQ_1 is:", np.exp(r*t[i])*disc_mean_gq1)
+    print("The mean error at time", str(t[i]), "using GQ_2 is:", np.exp(r*t[i])*disc_mean_gq2)
+    
+    MAE_c_a = np.abs(hedge_c_a_error[:,i]).mean()
+    print("The MAE at time", str(t[i]), "using CW_a is:", MAE_c_a)
+    MAE_c = np.abs(hedge_c_error[:,i]).mean()
+    print("The MAE at time", str(t[i]), "using CW_b is:", MAE_c)
+    MAE_gq1 = np.abs(hedge_gq1_error[:,i]).mean()
+    print("The MAE at time", str(t[i]), "using GQ_1 is:", MAE_gq1)
+    MAE_gq2 = np.abs(hedge_gq2_error[:,i]).mean()
+    print("The MAE at time", str(t[i]), "using GQ_2 is:", MAE_gq2)
+    
+    Min_c_a = np.min(hedge_c_a_error[:,i])
+    print("The Min at time", str(t[i]), "using CW_a is:", Min_c_a)
+    Min_c = np.min(hedge_c_error[:,i])
+    print("The Min at time", str(t[i]), "using CW_b is:", Min_c)
+    Min_gq1 = np.min(hedge_gq1_error[:,i])
+    print("The Min at time", str(t[i]), "using GQ_1 is:", Min_gq1)
+    Min_gq2 = np.min(hedge_gq2_error[:,i])
+    print("The Min at time", str(t[i]), "using GQ_2 is:", Min_gq2)
+    
+    Max_c_a=np.max(hedge_c_a_error[:,i])
+    print("The Max at time", str(t[i]), "using CW_a is:", Max_c_a)
+    Max_c=np.max(hedge_c_error[:,i])
+    print("The Max at time", str(t[i]), "using CW_b is:", Max_c)
+    Max_gq1=np.max(hedge_gq1_error[:,i])
+    print("The Max at time", str(t[i]), "using GQ_1 is:", Max_gq1)
+    Max_gq2=np.max(hedge_gq2_error[:,i])
+    print("The Max at time", str(t[i]), "using GQ_2 is:", Max_gq2)
+    
+    skew_c_a=si.skew(hedge_c_a_error[:,i],bias=False)
+    print("The skewness of the error using CW_a at time", str(t[i]),"is:",skew_c_a)
+    skew_c=si.skew(hedge_c_error[:,i],bias=False)
+    print("The skewness of the error using CW_b at time", str(t[i]),"is:",skew_c)
+    skew_gq1=si.skew(hedge_gq1_error[:,i],bias=False)
+    print("The skewness of the error using GQ_1 at time", str(t[i]),"is:",skew_gq1)
+    skew_gq2=si.skew(hedge_gq2_error[:,i],bias=False)
+    print("The skewness of the error using GQ_2 at time", str(t[i]),"is:",skew_gq2)
+    
+    kurtosis_c_a=si.kurtosis(hedge_c_a_error[:,i])
+    print("The kurtosis of the error using CW_a at time", str(t[i]), "is:", kurtosis_c_a)
+    kurtosis_c=si.kurtosis(hedge_c_error[:,i])
+    print("The kurtosis of the error using CW_b at time", str(t[i]), "is:", kurtosis_c)
+    kurtosis_gq1=si.kurtosis(hedge_gq1_error[:,i])
+    print("The kurtosis of the error using GQ_1 at time", str(t[i]), "is:", kurtosis_gq1)
+    kurtosis_gq2=si.kurtosis(hedge_gq2_error[:,i])
+    print("The kurtosis of the error using GQ_2 at time", str(t[i]), "is:", kurtosis_gq2)
+    
+    
+    percentile_ninetyfive_c_a.append(np.percentile(hedge_c_a_error[:,i],95))
+    percentile_ninetyfive_c.append(np.percentile(hedge_c_error[:,i],95))
+    percentile_ninetyfive_gq1.append(np.percentile(hedge_gq1_error[:,i],95))
+    percentile_ninetyfive_gq2.append(np.percentile(hedge_gq2_error[:,i],95))
+    
+    percentile_five_c_a.append(np.percentile(hedge_c_a_error[:,i],5))
+    percentile_five_c.append(np.percentile(hedge_c_error[:,i],5))
+    percentile_five_gq1.append(np.percentile(hedge_gq1_error[:,i],5))                                
+    percentile_five_gq2.append(np.percentile(hedge_gq2_error[:,i],5))
+    
+    mean_CWa.append(disc_mean_c_a)
+    mean_CW.append(disc_mean_c)
+    mean_GQ1.append(disc_mean_gq1)
+    mean_GQ2.append(disc_mean_gq2)
+
+
+
+#plot to check martingale property
+import matplotlib.pyplot as plt
+N=np.arange(1000)
+
+
+plt.plot(t, mean_GQ1, label='GQ1 mean')
+plt.plot(t,mean_CWa, label='CW_a mean')
+plt.plot(t,mean_CW, label='CW_b mean')
+plt.plot(t, mean_GQ2, label='GQ2 mean')
+
+plt.legend()
+plt.show()
+
+
+
+
+
+def MJ_call(S,strike,t,T):
+    sum_n = 0
+    for n in range(100):
+        r_n = r - lmda * g + (n * ( mu_j +  0.5 *  sigma_j **2))/(T-t)
+        sigma_n = np.sqrt(sigma **2 + (n *  sigma_j **2)/(T-t) )
+        d_1n = np.divide(np.log(S/strike) + (r_n -div + 0.5 * (sigma_n **2)) * (T-t), \
+                         sigma_n * np.sqrt(T-t))
+        Pr_n = np.exp(-lmda * (T-t)) * np.divide( ( lmda * (T-t))**n, math.factorial(n) )
+        sum_n += Pr_n * (S * np.exp((r_n - div) * (T-t)) * si.norm.cdf(d_1n) - \
+                         strike * si.norm.cdf(d_1n - sigma_n * np.sqrt(T-t)))
+    
+    call = np.exp(-r * (T-t)) * sum_n
+    return call
+print(MJ_call(S0,strike,0,T))
+print(callT[1,1], MJ_call(stock_paths[1,1],strike,t[0],T))
+
+
+
+#delta hedging
+delta = np.zeros((Nsim,Nsteps+1))
+hedge_error_d = np.zeros((Nsim,Nsteps))
+value = np.zeros((Nsim,Nsteps+1))
+
+percentile_ninetyfive_d =[]
+percentile_five_d = []
+mean_d =[]
+Delta_S = 2
+
+#initial wealth
+value[:,0] = callT[:,0]
+print("Initial wealth", value[1,0])
+
+#stockpaths for computing delta
+stock_paths_u = np.zeros((Nsim,Nsteps+1))
+stock_paths_u[:,0] = S0+Delta_S
+callT_u = np.zeros((Nsim,Nsteps+1))
+
+stock_paths_d = np.zeros((Nsim,Nsteps+1))
+stock_paths_d[:,0] = S0-Delta_S
+callT_d = np.zeros((Nsim,Nsteps+1))
+
+
+
+
+
+#stock paths for computing delta
+for i in range(Nsteps):
+    stock_paths_u[:,i+1] = stock_paths_u[:,i] * np.exp((r-div-lmda * g -0.5 * sigma **2)*delta_t \
+    + sigma * np.sqrt(delta_t) * Z1[:,i] + mu_j * Poisson[:,i] + \
+                                                       np.sqrt(Poisson[:,i]) * sigma_j *Z2[:,i])
+    
+    stock_paths_d[:,i+1] = stock_paths_d[:,i] * np.exp((r-div-lmda * g - 0.5 * sigma **2)*delta_t \
+    + sigma * np.sqrt(delta_t) * Z1[:,i] + mu_j * Poisson[:,i] + \
+                                                       np.sqrt(Poisson[:,i]) * sigma_j *Z2[:,i])
+    
+
+
+
+
+#delta at time 0
+delta[:,0] = np.divide(MJ_call(stock_paths_u[:,0],strike,0,T) - MJ_call(stock_paths_d[:,0],strike,0,T),\
+                       stock_paths_u[:,0] - stock_paths_d[:,0])
+
+
+for i in range(Nsteps):
+    delta[:,i+1]=np.divide(MJ_call(stock_paths_u[:,i+1],strike,t[i],T) -\
+                           MJ_call(stock_paths_d[:,i+1],strike,t[i],T),\
+                       stock_paths_u[:,i+1] - stock_paths_d[:,i+1])
+    
+    #computing the delta hedge at time t[i]
+    value[:,i+1]=delta[:,i]*stock_paths[:,i+1]+\
+    (value[:,i]-delta[:,i]*stock_paths[:,i])*np.exp(r*delta_t)
+    
+    hedge_error_d[:,i]=value[:,i+1]-callT[:,i+1]   
+    rmse_d=np.sqrt(np.square(hedge_error_d[:,i]).mean())
+    
+    print("The 95th percentile of the error at time", str(t[i]),"using Delta hedging is:", np.percentile(hedge_error_d[:,i],95))
+    
+    print("The 5th percentile of the error at time", str(t[i]),"using Delta hedging is:", np.percentile(hedge_error_d[:,i],5))
+    print("The rmse of the error at time", str(t[i]),"using Delta hedgingis:", rmse_d)
+    disc_mean_d=np.exp(-r*t[i-1])*hedge_error_d[:,i].mean()
+    
+    print("The discounted error at time", str(t[i]), "using Delta hedging is:", disc_mean_d)
+    percentile_ninetyfive_d.append(np.percentile(hedge_error_d[:,i],95))
+    
+    percentile_five_d.append(np.percentile(hedge_error_d[:,i],5))
+    mean_d.append(disc_mean_d)
+    MAE_d = np.abs(hedge_error_d[:,i]).mean()
+    print("The MAE at time", str(t[i]), "using Delta hedging is:", MAE_d)
+    Min_d = np.min(hedge_error_d[:,i])
+    print("The Min at time", str(t[i]), "using Delta hedging is:", Min_d)
+    Max_d=np.max(hedge_error_d[:,i])
+    print("The Max at time", str(t[i]), "using Delta hedging is:", Max_d)
+    skew_d=si.skew(hedge_error_d[:,i],bias=False)
+    print("The skewness of the error using delta hedging at time", str(t[i]),"is:",skew_d)
+    kurtosis_d=si.kurtosis(hedge_error_d[:,i])
+    print("The kurtosis of the error using delta hedging at time", str(t[i]),"is:",kurtosis_d)
+
+
+
+
+
+#plot to check martingale property
+import matplotlib.pyplot as plt
+N=np.arange(1000)
+
+
+#comparison between CW_b and GQ_1
+
+plt.plot(t,mean_CW, label='CW_b mean')
+plt.plot(t,percentile_ninetyfive_c,label='CW_b disc 95 PFA')
+plt.plot(t,percentile_five_c,label='CW_b disc 5 PFA')
+plt.plot(t, mean_GQ1, label='GQ1 mean')
+plt.plot(t,percentile_ninetyfive_gq1,label='GQ1 disc 95 PFA')
+plt.plot(t,percentile_five_gq1,label='GQ_1 disc 5 PFA')
+plt.title("CW_b and GQ_1 comparison")
+plt.legend()
+plt.show()
+
+#comparison between GQ_1 and GQ_2
+plt.plot(t, mean_GQ1, label='GQ_1 mean')
+plt.plot(t,percentile_ninetyfive_gq1,label='GQ1 disc 95 PFA')
+plt.plot(t,percentile_five_gq1,label='GQ1 disc 5 PFA')
+plt.plot(t, mean_GQ2, label='GQ_2 mean')
+plt.plot(t,percentile_ninetyfive_gq2,label='GQ_2 disc 95 PFA')
+plt.plot(t,percentile_five_gq2,label='GQ_2 disc 5 PFA')
+plt.title("GQ_1 and GQ_2 comparison")
+plt.legend()
+plt.show()
+
+
+#comparison between CW_b and GQ_2
+
+plt.plot(t,mean_CW, label='CW_b mean')
+plt.plot(t,percentile_ninetyfive_c,label='CW_b disc 95 PFA')
+plt.plot(t,percentile_five_c,label='CW_b disc 5 PFA')
+plt.plot(t, mean_GQ2, label='GQ_2 mean')
+plt.plot(t,percentile_ninetyfive_gq2,label='GQ_2 disc 95 PFA')
+plt.plot(t,percentile_five_gq2,label='GQ_2 disc 5 PFA')
+plt.title("CW_b and GQ_2 comparison")
+plt.legend()
+plt.show()
+
+#comparison between CW_b and Delta hedging
+plt.plot(t,mean_CW, label='CW_b mean')
+plt.plot(t, mean_d, label='DH mean')
+plt.plot(t,percentile_ninetyfive_c,label='CW_b disc 95 PFA')
+plt.plot(t,percentile_five_c,label='CW_b disc 5 PFA')
+plt.plot(t,percentile_ninetyfive_d,label='DH disc 95 PFA')
+plt.plot(t,percentile_five_d,label='DH disc 5 PFA')
+plt.title("CW_b and DH comparison")
+plt.legend()
+plt.show()
+
+#comparison between GQ_2 and Delta hedging
+
+plt.plot(t, mean_d, label='DH mean')
+plt.plot(t, mean_GQ2, label='GQ_2 mean')
+plt.plot(t,percentile_ninetyfive_gq2,label='GQ_2 disc 95 PFA')
+plt.plot(t,percentile_five_gq2,label='GQ_2 disc 5 PFA')
+plt.plot(t,percentile_ninetyfive_d,label='DH disc 95 PFA')
+plt.plot(t,percentile_five_d,label='DH disc 5 PFA')
+plt.title("GQ_2 and DH comparison")
+plt.legend()
+plt.show()
+
+#comparison between CW_a and Delta hedging
+plt.plot(t,mean_CWa, label='CW_a mean')
+plt.plot(t, mean_d, label='DH mean')
+plt.plot(t,percentile_ninetyfive_c_a,label='CW_a disc 95 PFA')
+plt.plot(t,percentile_five_c_a,label='CW_a disc 5 PFA')
+plt.plot(t,percentile_ninetyfive_d,label='DH disc 95 PFA')
+plt.plot(t,percentile_five_d,label='DH disc 5 PFA')
+plt.title("CW_a and DH comparison")
+plt.legend()
+plt.show()
+
+
+
+
+
+#comparison between GQ_2 and Delta hedging till u_2
+
+
+plt.plot(t[0:21],percentile_ninetyfive_gq2[0:21],label='GQ_2 disc 95 PFA')
+plt.plot(t[0:21],percentile_five_gq2[0:21],label='GQ_2 disc 5 PFA')
+plt.plot(t[0:21],percentile_ninetyfive_c_a[0:21],'*',label='CW_a disc 95 PFA')
+plt.plot(t[0:21],percentile_five_c_a[0:21],'m*',label='CW_a disc 5 PFA')
+plt.plot(t[0:21],percentile_ninetyfive_d[0:21],'x',label='DH disc 95 PFA')
+plt.plot(t[0:21],percentile_five_d[0:21],'^',label='DH disc 5 PFA')
+plt.title("GQ_2 and DH comparison")
+plt.legend(loc='upper left')
+plt.show()
